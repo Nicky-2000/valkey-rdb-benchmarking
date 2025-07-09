@@ -5,7 +5,8 @@ __pycache__/
 
 # C extensions
 *.so
-
+/flamegraphs/
+/benchmarking_results/
 # Distribution / packaging
 .Python
 build/

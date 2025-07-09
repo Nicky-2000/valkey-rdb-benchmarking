@@ -137,6 +137,7 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         cpu_utilization = (cpu_total_time / save_duration) * 100 if save_duration > 0 else 0
 
         return {
+            "status": "ok",
             "port": node_port,
             "save_duration_seconds": save_duration,
             "cpu_utilization_percent": cpu_utilization,
@@ -221,27 +222,3 @@ def verify_data(
         logging.error(f"❌ Verification Failed. Found {errors_found:,} errors out of {total_keys:,} keys.")
         return False
     
-def save_results_to_csv(results: list[dict], output_dir: str, file_name: str):
-    """
-    Saves a list of dictionary results to a CSV file.
-
-    Args:
-        results: A list of dictionaries, where each dict is a row.
-        output_dir: The directory to save the CSV file.
-        file_name: The name of the file to save (e.g., "results.csv").
-    """
-    if not results:
-        logging.warning("No results to save to CSV.")
-        return
-
-    try:
-        output_path = os.path.join(output_dir, file_name)
-        os.makedirs(output_dir, exist_ok=True)
-        
-        df = pd.DataFrame(results)
-        df.to_csv(output_path, index=False)
-        
-        logging.info(f"Benchmark results successfully saved to: {output_path}")
-
-    except Exception as e:
-        logging.error(f"Failed to save results to CSV at {output_path}.", exc_info=True)

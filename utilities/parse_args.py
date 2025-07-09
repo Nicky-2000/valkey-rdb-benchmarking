@@ -35,6 +35,7 @@ class BenchmarkConfig:
     io_threads: int
     temp_dir: str
     log_file: str | None # Using | None for Python 3.10+, can be Optional[str] for older versions
+    gen_flamegraph: bool
 
 def setup_logging(log_file: str | None):
     """
@@ -151,6 +152,13 @@ def parse_benchmark_args() -> BenchmarkConfig:
         "--log-file", type=str, default=None,
         help="Path to a file to write logs to. If not provided, logs are printed to the terminal."
     )
+    
+    parser.add_argument(
+        "--gen-flamegraph", 
+        action=argparse.BooleanOptionalAction, 
+        default=False,
+        help="Generate a flame graph for each test iteration.",
+    )
 
     args = parser.parse_args()
     
@@ -180,4 +188,5 @@ def parse_benchmark_args() -> BenchmarkConfig:
         io_threads=args.io_threads,
         temp_dir=temp_dir,
         log_file=args.log_file,
+        gen_flamegraph=args.gen_flamegraph
     )

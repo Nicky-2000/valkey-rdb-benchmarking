@@ -7,6 +7,8 @@ __pycache__/
 *.so
 /flamegraphs/
 /benchmarking_results/
+/results/
+/valkey_temp*
 # Distribution / packaging
 .Python
 build/

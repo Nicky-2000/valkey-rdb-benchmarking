@@ -71,9 +71,8 @@ def profile_rdb_load(config: BenchmarkConfig, output_dir: Path) -> dict | None:
         
         # Start profiling and timing simultaneously
         load_start_time = time.monotonic()
-        
         # Conditionally run the profiler
-        if config.flamegraph:
+        if config.gen_flamegraph:
             with FlamegraphProfiler(pid=process.pid, output_dir=output_dir) as profiler:
                 # Wait for server to finish loading RDB (i.e., become ready)
                 wait_for_server_to_start(config, timeout_seconds=600)
@@ -113,35 +112,41 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
     Main orchestration function for the RDB load benchmark.
     """
     # 1. Create the RDB file to be tested
+    config.rdb_threads = 10 # Save data with 10 threads for speeddd
     if not prepare_rdb_file(config):
         return None
-
+    
+    rdb_threads_to_profile = [1,2,3,4]
+    final_results = []
+    for rdb_threads in rdb_threads_to_profile:
     # 2. Profile the server loading that RDB file
-    load_results = profile_rdb_load(config, output_dir)
-    if not load_results or load_results.get("status") != "ok":
-        logging.error("Failed to profile the RDB load.")
-        return None
+        config.rdb_threads = rdb_threads
+        load_results = profile_rdb_load(config, output_dir)
+        if not load_results or load_results.get("status") != "ok":
+            logging.error("Failed to profile the RDB load.")
+            return None
 
-    # 3. Aggregate final metrics for reporting
-    data_dir = Path(config.temp_dir) / f"node_data_{config.start_port}"
-    rdb_file_path = data_dir / "dump.rdb"
-    rdb_file_size_bytes = rdb_file_path.stat().st_size if rdb_file_path.exists() else 0
-    load_duration = load_results.get("load_duration_seconds", 0)
+        # 3. Aggregate final metrics for reporting
+        data_dir = Path(config.temp_dir) / f"node_data_{config.start_port}"
+        rdb_file_path = data_dir / "dump.rdb"
+        rdb_file_size_bytes = rdb_file_path.stat().st_size if rdb_file_path.exists() else 0
+        load_duration = load_results.get("load_duration_seconds", 0)
 
-    actual_throughput = 0
-    if load_duration > 0:
-        actual_throughput = (rdb_file_size_bytes / load_duration) * (10**-6)  # MB/s
+        actual_throughput = 0
+        if load_duration > 0:
+            actual_throughput = (rdb_file_size_bytes / load_duration) * (10**-6)  # MB/s
 
-    final_result = {
-        "keys": config.num_keys,
-        "value_size": config.value_size_bytes,
-        "rdbcompression": config.rdb_compression,
-        "rdbchecksum": config.rdb_checksum,
-        "actual_throughput_mb_s": actual_throughput,
-        "rdb_file_size_bytes": rdb_file_size_bytes,
-        **load_results,
-    }
-    return [final_result] # Return as a list for consistency with save_results_to_csv
+        result = {
+            "keys": config.num_keys_millions,
+            "value_size": config.value_size_bytes,
+            "rdbcompression": config.rdb_compression,
+            "rdbchecksum": config.rdb_checksum,
+            "actual_throughput_mb_s": actual_throughput,
+            "rdb_file_size_bytes": rdb_file_size_bytes,
+            **load_results,
+        }
+        final_results.append(result)
+    return final_results # Return as a list for consistency with save_results_to_csv
 
 
 def main():
@@ -154,7 +159,7 @@ def main():
     try:
         run_id = time.strftime("%Y%m%d_%H%M%S")
         project_root = Path(__file__).resolve().parents[2]
-        dir_name = "load_benchmark_with_flamegraphs" if config.flamegraph else "load_benchmark"
+        dir_name = "load_benchmark_with_flamegraphs" if config.gen_flamegraph else "load_benchmark"
         output_dir = project_root / "results" / f"{dir_name}_{run_id}"
         output_dir.mkdir(parents=True, exist_ok=True)
         logging.info(f"All output for this run will be saved in: {output_dir}")
@@ -168,13 +173,13 @@ def main():
     if results:
         logging.info("Benchmark finished. Collected results.")
         csv_file_name = (
-            f"load_summary_{config.num_keys}keys_{config.value_size_bytes}B"
+            f"load_summary_{config.num_keys_millions}keys_{config.value_size_bytes}B"
             f"_comp-{config.rdb_compression}_csum-{config.rdb_checksum}.csv"
         )
         save_results_to_csv(
             results=results,
             output_dir=str(output_dir),
-            csv_file_name=csv_file_name,
+            file_name=csv_file_name,
         )
     else:
         logging.error("Benchmark failed to produce any results.")

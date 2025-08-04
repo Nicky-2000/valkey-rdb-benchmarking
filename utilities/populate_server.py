@@ -1,5 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import logging
+import subprocess
 import time
 import os
 import sys
@@ -7,9 +8,12 @@ import valkey
 from utilities.key_value_generation_utilities import make_random_key, make_deterministic_val
 from utilities.parse_args import BenchmarkConfig
 
+KEY_SIZE_BYTES = 16
 
 NUM_PROCESSES_FOR_DATA_POPULATION = 20
 EXPECTED_KEY_VALUES = []
+
+# ./src/valkey-benchmark -h 127.0.0.1 -p 7001 -t SET -n 50000000 -d 100 -c 200 -P 64 -r 50000000 --sequential
 
 # --- Data Population (Multiprocessed) ---
 def _populate_worker(
@@ -29,7 +33,7 @@ def _populate_worker(
         The number of keys successfully inserted by this worker.
     """
     host, port = connection_info
-    batch_size = 1000 if value_size > 10_000 else 50_000
+    batch_size = 1 if value_size > 10_000 else 50_000
     try:
         client = valkey.Valkey(host=host, port=port, decode_responses=True)
         client.ping()  # Verify connection
@@ -68,7 +72,7 @@ def populate_data_standalone(config: BenchmarkConfig):
     
     # 1. Generate all keys in the main process first.
     #    This ensures the list is identical for every benchmark run.
-    keys_to_load = [make_random_key(key_length=16) for _ in range(num_keys)]
+    keys_to_load = [make_random_key(key_length=KEY_SIZE_BYTES) for _ in range(num_keys)]
     
     generation_time = time.monotonic() - start_time
     logging.info(f"Key generation finished in {generation_time:.2f} seconds.")
@@ -109,12 +113,86 @@ def populate_data_standalone(config: BenchmarkConfig):
     keys_per_second = total_keys_inserted / load_time if load_time > 0 else 0
 
     logging.info("--- Data Population Summary ---")
-    logging.info(f"Target Keys:      {num_keys:,}")
-    logging.info(f"Successfully Set: {total_keys_inserted:,}")
-    logging.info(f"Total Time:       {load_time:.2f} seconds")
-    logging.info(f"Rate:             {keys_per_second:,.2f} keys/sec")
+    logging.info(f"Target Keys:                {num_keys:,}")
+    logging.info(f"Successfully Set:           {total_keys_inserted:,}")
+    logging.info(f"Data Population Total Time: {load_time:.2f} seconds")
+    logging.info(f"Rate:                       {keys_per_second:,.2f} keys/sec")
 
     if total_keys_inserted != num_keys:
         logging.warning("Data population may be incomplete. Check logs for errors.")
         
     return keys_to_load
+
+
+def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
+    """
+    Populates a standalone Valkey instance using the valkey-benchmark command.
+
+    Args:
+        config: The BenchmarkConfig object containing run parameters.
+
+    Returns:
+        True if data population was successful, False otherwise.
+    """
+    valkey_benchmark_path = os.environ.get("VALKEY_BENCHMARK_PATH")
+    if not valkey_benchmark_path:
+        logging.error("VALKEY_BENCHMARK_PATH environment variable is not set.")
+        return False
+    if not os.path.exists(valkey_benchmark_path):
+        logging.error(f"valkey-benchmark executable not found at: {valkey_benchmark_path}")
+        return False
+
+    num_keys = int(config.num_keys_millions * 1e6)
+    
+    # Construct the valkey-benchmark command
+    command = [
+        valkey_benchmark_path,
+        "-h", "127.0.0.1",
+        "-p", str(config.start_port),
+        "-t", "SET",
+        "-n", str(num_keys),
+        "-d", str(config.value_size_bytes),
+        "-c", str(config.clients if hasattr(config, 'clients') else 200), # Use config.clients if available, else default
+        "-P", str(config.pipeline_size if hasattr(config, 'pipeline_size') else 64), # Use config.pipeline_size if available, else default
+        "-r", str(num_keys), # --random-keys-range
+        "--sequential",      # Use sequential keys
+        "--csv"              # Output in CSV format for easier parsing of results if needed
+    ]
+
+    logging.info(f"Starting data population with valkey-benchmark: {' '.join(command)}")
+    start_time = time.monotonic()
+
+    try:
+        # Run the command. capture_output=True will capture stdout/stderr.
+        # text=True decodes output as text. check=True will raise CalledProcessError on non-zero exit code.
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+
+        end_time = time.monotonic()
+        load_time = end_time - start_time
+
+        logging.info("--- Data Population Summary (valkey-benchmark) ---")
+        logging.info(f"Command executed: {' '.join(command)}")
+        logging.info(f"Target Keys: {num_keys:,}")
+        logging.info(f"Data Population Total Time: {load_time:.2f} seconds")
+        
+        # valkey-benchmark doesn't easily report "keys successfully set" without parsing its output
+        # For a basic check, we just rely on the command's exit code.
+        logging.info("valkey-benchmark stdout:\n" + result.stdout)
+        if result.stderr:
+            logging.warning("valkey-benchmark stderr:\n" + result.stderr)
+
+        logging.info("Data population with valkey-benchmark completed successfully.")
+        return True
+
+    except subprocess.CalledProcessError as e:
+        logging.error(f"valkey-benchmark command failed with exit code {e.returncode}: {e}", exc_info=True)
+        logging.error("valkey-benchmark stdout:\n" + e.stdout)
+        if e.stderr:
+            logging.error("valkey-benchmark stderr:\n" + e.stderr)
+        return False
+    except FileNotFoundError:
+        logging.error(f"valkey-benchmark executable not found. Ensure VALKEY_BENCHMARK_PATH is correct: {valkey_benchmark_path}")
+        return False
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during valkey-benchmark execution: {e}", exc_info=True)
+        return False

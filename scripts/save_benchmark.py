@@ -19,7 +19,7 @@ from utilities.valkey_server_utilities import (
     stop_valkey_server,
     wait_for_server_to_start,
 )
-from utilities.populate_server import populate_data_standalone
+from utilities.populate_server import populate_data_standalone, KEY_SIZE_BYTES
 from utilities.valkey_commands import get_db_key_count, profile_blocking_save
 from utilities.flamegraph_profiler import FlamegraphProfiler
 
@@ -27,7 +27,7 @@ from utilities.flamegraph_profiler import FlamegraphProfiler
 def save_benchmark(config: BenchmarkConfig, output_dir: Path):
     """
     Runs a benchmark to generate flame graphs for the SAVE command
-    across a variety of rdb-snapshot-threads settings.
+    across a variety of rdb-threads settings.
     """
     process = None
     client = None
@@ -59,9 +59,9 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
 
         for num_threads in thread_counts_to_test:
             logging.info(
-                f"--- Running test with rdb-snapshot-threads = {num_threads} ---"
+                f"--- Running test with rdb-threads = {num_threads} ---"
             )
-            client.config_set("rdb-snapshot-threads", num_threads)
+            client.config_set("rdb-threads", num_threads)
 
             try:
                 # Use the FlamegraphProfiler context manager
@@ -85,17 +85,18 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
             # --- 4. Process and Aggregate Results ---
             data_dir = Path(config.temp_dir) / f"node_data_{config.start_port}"
             rdb_file_path = data_dir / "dump.rdb"
+            
             rdb_file_size_bytes = (
                 rdb_file_path.stat().st_size if rdb_file_path.exists() else 0
             )
-
+            
             save_duration = save_result.get("save_duration_seconds", 0)
             actual_throughput = 0
             valkey_data_throughput = 0
             num_keys = int(config.num_keys_millions * 1e6)
             if save_result.get("status") == "ok" and save_duration > 0:
                 actual_throughput = (rdb_file_size_bytes / save_duration) * (10**-6)
-                valkey_data_throughput =((num_keys * config.value_size_bytes) / save_duration) * (10**-6)
+                valkey_data_throughput =((num_keys * (config.value_size_bytes + KEY_SIZE_BYTES)) / save_duration) * (10**-6)
 
             # Combine all results into a single dictionary
             final_result = {
@@ -156,7 +157,7 @@ def main():
         logging.info(f"Benchmark finished. Collected {len(results)} results.")
 
         csv_file_name = (
-            f"save_summary_{config.num_keys}keys_{config.value_size_bytes}B"
+            f"save_summary_{config.num_keys_millions}keys_{config.value_size_bytes}B"
             f"_comp-{config.rdb_compression}_csum-{config.rdb_checksum}.csv"
         )
         

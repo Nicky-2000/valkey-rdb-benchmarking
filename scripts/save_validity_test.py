@@ -6,7 +6,7 @@ from utilities.valkey_server_utilities import (
     stop_valkey_server,
     wait_for_server_to_start,
 )
-from utilities.populate_server import populate_data_standalone
+from utilities.populate_server import populate_data_standalone, KEY_SIZE_BYTES
 from utilities.valkey_commands import (
     get_db_key_count,
     trigger_blocking_save,
@@ -51,6 +51,8 @@ def rdb_save_validity_test(config: BenchmarkConfig) -> bool:
 
         # --- 3. Trigger SAVE and Stop Server ---
         trigger_blocking_save(client)
+        logging.info("Save completed. Stopping server...")
+
         stop_valkey_server(process, client)
         process, client = None, None  # Reset for restart
 
@@ -63,7 +65,7 @@ def rdb_save_validity_test(config: BenchmarkConfig) -> bool:
             logging.critical("Failed to restart Valkey server. Aborting test.")
             return False
 
-        client = wait_for_server_to_start(config, timeout_seconds=60)
+        client = wait_for_server_to_start(config, timeout_seconds=480)
         if not client:
             logging.critical("Restarted Valkey server did not become reachable.")
             return False

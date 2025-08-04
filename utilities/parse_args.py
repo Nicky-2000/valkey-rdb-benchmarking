@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 START_PORT_DEFAULT = 7000
 NUM_KEYS_MILLIONS_DEFAULT = 10.0
 VALUE_SIZE_BYTES_DEFAULT = 100
-RDB_SNAPSHOT_THREADS_DEFAULT = 1
+RDB_THREADS_DEFAULT = 1
 IO_THREADS_DEFAULT = 4
 TEST_CONF_TEMPLATE_DEFAULT = "default.conf"
 TEMP_SUBDIR_DEFAULT = "valkey_temp"
@@ -18,7 +18,7 @@ FLAMEGRAPH_OUTPUT_DIR_DEFAULT = "flamegraphs"
 
 
 # --- Data Class for Configuration ---
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class BenchmarkConfig:
     """
     Holds all configuration parameters for the Valkey rdb benchmark.
@@ -29,7 +29,7 @@ class BenchmarkConfig:
     num_keys_millions: int
     value_size_bytes: int
     conf_template: str
-    rdb_snapshot_threads: int
+    rdb_threads: int
     rdb_compression: str
     rdb_checksum: str
     io_threads: int
@@ -76,8 +76,11 @@ def display_config(config: BenchmarkConfig):
     
     for key, value in config_dict.items():
         formatted_key = key.replace('_', ' ').title()
-        log_message += f"  {formatted_key:<{max_key_length + 2}}: {value}\n"
-        
+        if formatted_key == "Num Keys Millions":
+            log_message += f"  {"Num Keys":<{max_key_length + 2}}: {int(value * 10**6)}\n"
+        else:
+            log_message += f"  {formatted_key:<{max_key_length + 2}}: {value}\n"
+
     log_message += "--------------------------------------"
     
     logging.info(log_message)
@@ -121,8 +124,8 @@ def parse_benchmark_args() -> BenchmarkConfig:
 
     # RDB and Server Configuration
     parser.add_argument(
-        "--rdb-snapshot-threads", type=int, default=RDB_SNAPSHOT_THREADS_DEFAULT,
-        help=f"Number of threads to save keys with (default: {RDB_SNAPSHOT_THREADS_DEFAULT})",
+        "--rdb-threads", type=int, default=RDB_THREADS_DEFAULT,
+        help=f"Number of threads to save keys with (default: {RDB_THREADS_DEFAULT})",
     )
     parser.add_argument(
         "--rdbcompression", type=str, default="yes", choices=["yes", "no"],
@@ -143,7 +146,7 @@ def parse_benchmark_args() -> BenchmarkConfig:
         help="Base directory for temporary data. Overrides --tempfs.",
     )
     parser.add_argument(
-        "--tempfs", action=argparse.BooleanOptionalAction, default=False,
+        "--tempfs", type=bool, default=False,
         help="Use a tempfs directory (/dev/shm) for temporary data.",
     )
     
@@ -182,7 +185,7 @@ def parse_benchmark_args() -> BenchmarkConfig:
         num_keys_millions=args.num_keys,
         value_size_bytes=args.value_size,
         conf_template=args.conf,
-        rdb_snapshot_threads=args.rdb_snapshot_threads,
+        rdb_threads=args.rdb_threads,
         rdb_compression=args.rdbcompression,
         rdb_checksum=args.rdbchecksum,
         io_threads=args.io_threads,

@@ -37,14 +37,16 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
         str(valkey_log_file_path),
         "--io-threads",
         str(config.io_threads),
-        "--rdb-snapshot-threads",
-        str(config.rdb_snapshot_threads),
+        "--rdb-threads",
+        str(config.rdb_threads),
         "--save",
         "",  # Disable automatic saving
         "--rdbcompression",
         config.rdb_compression,
         "--rdbchecksum",
         config.rdb_checksum,
+        "--dbfilename",
+        "dump.rdb",
     ]
 
     try:

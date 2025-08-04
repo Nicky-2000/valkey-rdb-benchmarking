@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import pandas as pd
 
@@ -14,6 +15,32 @@ def setup_directory_for_run(directory: Path):
         subprocess.run(
             ["rm", "-rf", os.path.join(directory, "*")], check=True
         )  # Clear previous contents if they exist
+
+def delete_directory_recursive(directory_path):
+    """
+    Deletes a directory and all its contents recursively, similar to 'rm -rf'.
+
+    Args:
+        directory_path (str): The path to the directory to delete.
+    """
+    logging.info(f"Attempting to delete directory recursively: {directory_path}")
+    
+    # Check if the directory exists before attempting to delete it
+    if os.path.exists(directory_path):
+        if os.path.isdir(directory_path):
+            try:
+                shutil.rmtree(directory_path)
+                logging.info(f"Successfully deleted directory: {directory_path}")
+            except OSError as e:
+                logging.error(f"Error deleting directory {directory_path}: {e}")
+        else:
+            logging.warning(f"Path is not a directory, skipping recursive deletion: {directory_path}")
+            # If it's a file and you want to delete it, you could call delete_file here,
+            # but for an rm -rf equivalent, shutil.rmtree specifically targets directories.
+            # If the user *meant* to delete a file that happens to be passed, they should use os.remove.
+            # This function is strictly for directories.
+    else:
+        logging.info(f"Directory not found, skipping deletion: {directory_path}")
 
 
 def delete_file(file_path):

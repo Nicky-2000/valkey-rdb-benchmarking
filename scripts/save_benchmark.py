@@ -19,7 +19,7 @@ from utilities.valkey_server_utilities import (
     stop_valkey_server,
     wait_for_server_to_start,
 )
-from utilities.populate_server import populate_data_standalone, KEY_SIZE_BYTES
+from utilities.populate_server import populate_data_standalone, KEY_SIZE_BYTES, populate_data_with_benchmark
 from utilities.valkey_commands import get_db_key_count, profile_blocking_save
 from utilities.flamegraph_profiler import FlamegraphProfiler
 
@@ -44,12 +44,14 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
             return None
 
         # --- 2. Populate Data ---
-        keys_to_test = populate_data_standalone(config)
+        populate_data_with_benchmark(config)
+        num_keys_expected = config.num_keys_millions * 1e6
+        # keys_to_test = populate_data_standalone(config)
         initial_key_count = get_db_key_count(config)
 
-        if initial_key_count != len(keys_to_test):
+        if initial_key_count != num_keys_expected:
             logging.error(
-                f"Key population mismatch: Expected {len(keys_to_test):,} keys but DB has {initial_key_count:,}."
+                f"Key population mismatch: Expected {num_keys_expected:,} keys but DB has {initial_key_count:,}."
             )
             return None
 

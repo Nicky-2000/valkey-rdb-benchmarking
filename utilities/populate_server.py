@@ -15,6 +15,87 @@ EXPECTED_KEY_VALUES = []
 
 # ./src/valkey-benchmark -h 127.0.0.1 -p 7001 -t SET -n 50000000 -d 100 -c 200 -P 64 -r 50000000 --sequential
 
+def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
+    """
+    Populates a standalone Valkey instance using the valkey-benchmark command,
+    printing every 100th line of output to the console.
+
+    Args:
+        config: The BenchmarkConfig object containing run parameters.
+
+    Returns:
+        True if data population was successful, False otherwise.
+    """
+    valkey_benchmark_path = os.environ.get("VALKEY_BENCHMARK_PATH")
+    if not valkey_benchmark_path:
+        logging.error("VALKEY_BENCHMARK_PATH environment variable is not set.")
+        return False
+    if not os.path.exists(valkey_benchmark_path):
+        logging.error(f"valkey-benchmark executable not found at: {valkey_benchmark_path}")
+        return False
+
+    num_keys = int(config.num_keys_millions * 1e6)
+    
+    # Construct the valkey-benchmark command
+    command = [
+        valkey_benchmark_path,
+        "-h", "127.0.0.1",
+        "-p", str(config.start_port),
+        "-t", "SET",
+        "-n", str(num_keys),
+        "-d", str(config.value_size_bytes),
+        "-c", str(config.clients if hasattr(config, 'clients') else 200),
+        "-P", str(config.pipeline_size if hasattr(config, 'pipeline_size') else 64),
+        "-r", str(num_keys),
+        "--sequential",
+    ]
+
+    logging.info(f"Starting data population with valkey-benchmark: {' '.join(command)}")
+    start_time = time.monotonic()
+
+    try:
+        # Use subprocess.Popen to stream output
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Redirect stderr to stdout to consolidate output
+            text=True,
+            universal_newlines=True
+        )
+
+        # Print only every 100th line of output
+        line_count = 0
+        for line in process.stdout:
+            line_count += 1
+            if line_count % 100 == 0:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+        
+        # Ensure the last line is printed if the total isn't a multiple of 100
+        if line_count % 100 != 0:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+
+        return_code = process.wait()
+
+        end_time = time.monotonic()
+        load_time = end_time - start_time
+
+        logging.info("--- Data Population Summary (valkey-benchmark) ---")
+        logging.info(f"Target Keys: {num_keys:,}")
+        logging.info(f"Data Population Total Time: {load_time:.2f} seconds")
+        logging.info(f"Data population with valkey-benchmark finished with return code: {return_code}")
+
+        return return_code == 0
+
+    except FileNotFoundError:
+        logging.error(f"valkey-benchmark executable not found. Ensure VALKEY_BENCHMARK_PATH is correct: {valkey_benchmark_path}")
+        return False
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during valkey-benchmark execution: {e}", exc_info=True)
+        return False
+
+
 # --- Data Population (Multiprocessed) ---
 def _populate_worker(
     keys: list[str],
@@ -122,77 +203,3 @@ def populate_data_standalone(config: BenchmarkConfig):
         logging.warning("Data population may be incomplete. Check logs for errors.")
         
     return keys_to_load
-
-
-def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
-    """
-    Populates a standalone Valkey instance using the valkey-benchmark command.
-
-    Args:
-        config: The BenchmarkConfig object containing run parameters.
-
-    Returns:
-        True if data population was successful, False otherwise.
-    """
-    valkey_benchmark_path = os.environ.get("VALKEY_BENCHMARK_PATH")
-    if not valkey_benchmark_path:
-        logging.error("VALKEY_BENCHMARK_PATH environment variable is not set.")
-        return False
-    if not os.path.exists(valkey_benchmark_path):
-        logging.error(f"valkey-benchmark executable not found at: {valkey_benchmark_path}")
-        return False
-
-    num_keys = int(config.num_keys_millions * 1e6)
-    
-    # Construct the valkey-benchmark command
-    command = [
-        valkey_benchmark_path,
-        "-h", "127.0.0.1",
-        "-p", str(config.start_port),
-        "-t", "SET",
-        "-n", str(num_keys),
-        "-d", str(config.value_size_bytes),
-        "-c", str(config.clients if hasattr(config, 'clients') else 200), # Use config.clients if available, else default
-        "-P", str(config.pipeline_size if hasattr(config, 'pipeline_size') else 64), # Use config.pipeline_size if available, else default
-        "-r", str(num_keys), # --random-keys-range
-        "--sequential",      # Use sequential keys
-        "--csv"              # Output in CSV format for easier parsing of results if needed
-    ]
-
-    logging.info(f"Starting data population with valkey-benchmark: {' '.join(command)}")
-    start_time = time.monotonic()
-
-    try:
-        # Run the command. capture_output=True will capture stdout/stderr.
-        # text=True decodes output as text. check=True will raise CalledProcessError on non-zero exit code.
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-
-        end_time = time.monotonic()
-        load_time = end_time - start_time
-
-        logging.info("--- Data Population Summary (valkey-benchmark) ---")
-        logging.info(f"Command executed: {' '.join(command)}")
-        logging.info(f"Target Keys: {num_keys:,}")
-        logging.info(f"Data Population Total Time: {load_time:.2f} seconds")
-        
-        # valkey-benchmark doesn't easily report "keys successfully set" without parsing its output
-        # For a basic check, we just rely on the command's exit code.
-        logging.info("valkey-benchmark stdout:\n" + result.stdout)
-        if result.stderr:
-            logging.warning("valkey-benchmark stderr:\n" + result.stderr)
-
-        logging.info("Data population with valkey-benchmark completed successfully.")
-        return True
-
-    except subprocess.CalledProcessError as e:
-        logging.error(f"valkey-benchmark command failed with exit code {e.returncode}: {e}", exc_info=True)
-        logging.error("valkey-benchmark stdout:\n" + e.stdout)
-        if e.stderr:
-            logging.error("valkey-benchmark stderr:\n" + e.stderr)
-        return False
-    except FileNotFoundError:
-        logging.error(f"valkey-benchmark executable not found. Ensure VALKEY_BENCHMARK_PATH is correct: {valkey_benchmark_path}")
-        return False
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during valkey-benchmark execution: {e}", exc_info=True)
-        return False

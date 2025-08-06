@@ -151,6 +151,12 @@ def parse_benchmark_args() -> BenchmarkConfig:
         help="Use a tempfs directory (/dev/shm) for temporary data.",
     )
     
+    parser.add_argument(
+        "--ssd-path", type=str, default=None,
+        help="Uses ssd mounted path provided."
+    )
+
+    
     # Logging Configuration
     parser.add_argument(
         "--log-file", type=str, default=None,
@@ -171,7 +177,9 @@ def parse_benchmark_args() -> BenchmarkConfig:
         parser.error(f"Valkey server path is not a valid file: {args.valkey_server_path}")
 
     # --- Post-process arguments and create the dataclass instance ---
-    if args.temp_dir:
+    if args.ssd_path:
+        temp_dir = os.path.join(args.ssd_path, f"{TEMP_SUBDIR_DEFAULT}_{time.time_ns()}")
+    elif args.temp_dir:
         temp_dir = args.temp_dir
     elif args.tempfs:
         temp_dir = os.path.join("/dev/shm", f"{TEMP_SUBDIR_DEFAULT}_{time.time_ns()}")

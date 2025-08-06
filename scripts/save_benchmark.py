@@ -55,7 +55,7 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
 
         # --- 3. Iterate, Profile, and Collect Results ---
         all_results = []
-        thread_counts_to_test = [1, 2, 4, 6, 8, 10]
+        thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
 
         for num_threads in thread_counts_to_test:
             logging.info(

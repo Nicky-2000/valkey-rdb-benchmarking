@@ -77,7 +77,8 @@ def display_config(config: BenchmarkConfig):
     for key, value in config_dict.items():
         formatted_key = key.replace('_', ' ').title()
         if formatted_key == "Num Keys Millions":
-            log_message += f"  {"Num Keys":<{max_key_length + 2}}: {int(value * 10**6)}\n"
+            log_message += f"  {'Num Keys':<{max_key_length + 2}}: {int(value * 10**6)}\n"
+
         else:
             log_message += f"  {formatted_key:<{max_key_length + 2}}: {value}\n"
 

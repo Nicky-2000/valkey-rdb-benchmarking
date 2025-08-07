@@ -47,6 +47,8 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
         config.rdb_checksum,
         "--dbfilename",
         "dump.rdb",
+        # "repl-diskless-sync",
+        # "yes",
     ]
 
     try:

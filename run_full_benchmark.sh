@@ -77,22 +77,22 @@ declare -a benchmarks=(
     # "1000 300 yes"
     # "500 500 no"
     # "500 500 yes"
-    "50 5000 no"
-    "50 5000 yes"
-    "10 20000 no"
-    "10 20000 yes"
-    "5 64000 no" # Slightly smaller than lower watermark
-    "5 64000 yes"
-    "5 66000 no" # Slightly larger than lower watermark
-    "5 66000 yes"
-    # "1 100000 no"
-    # "1 100000 yes"
-    # "0.5 262000 no" # Slightly smaller than upper watermark
-    # "0.5 262000 yes"
-    # "0.5 272000 no" # Slightly larger than upper watermark
-    # "0.5 272000 yes"
-    # "0.1 1000000 no" # 1MB
-    # "0.1 1000000 yes"
+    # "50 5000 no"
+    # "50 5000 yes"
+    # "10 20000 no"
+    # "10 20000 yes"
+    # "5 64000 no" # Slightly smaller than lower watermark
+    # "5 64000 yes"
+    # "5 66000 no" # Slightly larger than lower watermark
+    # "5 66000 yes"
+    "1 100000 no"
+    "1 100000 yes"
+    "0.5 262000 no" # Slightly smaller than upper watermark
+    "0.5 262000 yes"
+    "0.5 272000 no" # Slightly larger than upper watermark
+    "0.5 272000 yes"
+    "0.1 1000000 no" # 1MB
+    "0.1 1000000 yes"
 )
 
 # Run benchmarks in a loop

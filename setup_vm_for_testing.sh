@@ -45,6 +45,8 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
+deactivate
+cd ..
 
 # --- 5. Create .env file with correct paths ---
 echo "--- Creating .env file with Valkey binary paths ---"

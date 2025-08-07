@@ -19,7 +19,7 @@ sudo apt-get install -y git python3-venv build-essential
 echo "--- Cloning repositories ---"
 if [ ! -d "$REPO_VALKEY_DIR" ]; then
     git clone "$REPO_VALKEY_URL"
-    cd "$REPO_VALKEY_URL"
+    cd "$REPO_VALKEY_DIR"
     git checkout rdb-save-multi-thread
     cd ..
 else

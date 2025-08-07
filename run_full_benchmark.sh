@@ -17,31 +17,83 @@ echo "Virtual environment activated." | tee -a "$LOG_FILE"
 echo "Starting benchmarks. All output to $LOG_FILE" | tee -a "$LOG_FILE"
 echo "----------------------------------------------------" | tee -a "$LOG_FILE"
 
-# Define benchmark configurations
+# VM 1
 declare -a benchmarks=(
-    "100 50 no"
-    "100 50 yes"
-    "40 300 no"
-    "40 300 yes"
-    "40 500 no"
-    "40 500 yes"
-    "5 5000 no"
-    "5 5000 yes"
-    "1 20000 no"
-    "1 20000 yes"
-    "5 64000 no" # Slightly smaller than lower watermark
-    "5 64000 yes"
-    "5 66000 no" # Slightly larger than lower watermark
-    "5 66000 yes"
-    "0.1 100000 no"
-    "0.1 100000 yes"
-    "0.1 262000 no" # Slightly smaller than upper watermark
-    "0.1 262000 yes"
-    "0.1 272000 no" # Slightly larger than upper watermark
-    "0.1 272000 yes"
-    "0.01 1000000 no" # 1MB
-    "0.01 1000000 yes"
+    "2000 50 no"
+    "2000 50 yes"
+    "1000 300 no"
+    "1000 300 yes"
+    # "500 500 no"
+    # "500 500 yes"
+    # "50 5000 no"
+    # "50 5000 yes"
+    # "10 20000 no"
+    # "10 20000 yes"
+    # "5 64000 no" # Slightly smaller than lower watermark
+    # "5 64000 yes"
+    # "5 66000 no" # Slightly larger than lower watermark
+    # "5 66000 yes"
+    # "1 100000 no"
+    # "1 100000 yes"
+    # "0.5 262000 no" # Slightly smaller than upper watermark
+    # "0.5 262000 yes"
+    # "0.5 272000 no" # Slightly larger than upper watermark
+    # "0.5 272000 yes"
+    # "0.1 1000000 no" # 1MB
+    # "0.1 1000000 yes"
 )
+
+# # VM 2
+# declare -a benchmarks=(
+#     # "2000 50 no"
+#     # "2000 50 yes"
+#     # "1000 300 no"
+#     # "1000 300 yes"
+#     # "500 500 no"
+#     # "500 500 yes"
+#     "50 5000 no"
+#     "50 5000 yes"
+#     "10 20000 no"
+#     "10 20000 yes"
+#     "5 64000 no" # Slightly smaller than lower watermark
+#     "5 64000 yes"
+#     "5 66000 no" # Slightly larger than lower watermark
+#     "5 66000 yes"
+#     # "1 100000 no"
+#     # "1 100000 yes"
+#     # "0.5 262000 no" # Slightly smaller than upper watermark
+#     # "0.5 262000 yes"
+#     # "0.5 272000 no" # Slightly larger than upper watermark
+#     # "0.5 272000 yes"
+#     # "0.1 1000000 no" # 1MB
+#     # "0.1 1000000 yes"
+# )
+
+# # VM 3
+# declare -a benchmarks=(
+#     # "2000 50 no"
+#     # "2000 50 yes"
+#     # "1000 300 no"
+#     # "1000 300 yes"
+#     # "500 500 no"
+#     # "500 500 yes"
+#     "50 5000 no"
+#     "50 5000 yes"
+#     "10 20000 no"
+#     "10 20000 yes"
+#     "5 64000 no" # Slightly smaller than lower watermark
+#     "5 64000 yes"
+#     "5 66000 no" # Slightly larger than lower watermark
+#     "5 66000 yes"
+#     # "1 100000 no"
+#     # "1 100000 yes"
+#     # "0.5 262000 no" # Slightly smaller than upper watermark
+#     # "0.5 262000 yes"
+#     # "0.5 272000 no" # Slightly larger than upper watermark
+#     # "0.5 272000 yes"
+#     # "0.1 1000000 no" # 1MB
+#     # "0.1 1000000 yes"
+# )
 
 # Run benchmarks in a loop
 for config in "${benchmarks[@]}"; do

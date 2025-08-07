@@ -3,7 +3,7 @@ import subprocess
 import time
 import psutil
 import valkey
-from utilities.parse_args import BenchmarkConfig
+from utilities.parse_args import LOG_COLORS, BenchmarkConfig, colorize
 from utilities.key_value_generation_utilities import make_deterministic_val 
 
 def get_db_key_count(config: BenchmarkConfig) -> int:
@@ -130,7 +130,7 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         mem_after = valkey_proc.memory_info()
         ctx_after = valkey_proc.num_ctx_switches()
 
-        logging.info(f"Profiled SAVE on port {node_port} finished in {save_duration:.4f} seconds.")
+        logging.info(colorize(f"Profiled SAVE on port {node_port} finished in {save_duration:.4f} seconds.", LOG_COLORS.GREEN))
 
         # --- Calculate and return the results ---
         cpu_total_time = (cpu_after.user - cpu_before.user) + (cpu_after.system - cpu_before.system)

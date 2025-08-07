@@ -7,6 +7,8 @@ from utilities.parse_args import (
     parse_benchmark_args,
     display_config,
     setup_logging,
+    colorize,
+    LOG_COLORS,
     BenchmarkConfig,
 )
 from utilities.file_system_utilities import (
@@ -35,6 +37,14 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
     try:
         # --- 1. Initial Setup and Server Start ---
         setup_directory_for_run(config.temp_dir)
+        compression_options = []
+        if config.rdb_compression == "both":
+            compression_options = ["yes", "no"]
+        else: 
+            compression_options.append(config.rdb_compression)
+            
+        config.rdb_compression = "yes" # Set this so we can start the server
+        
         process = start_standalone_valkey_server(config)
         if not process:
             return None
@@ -58,67 +68,73 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
         # --- 3. Iterate, Profile, and Collect Results ---
         all_results = []
         thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
-
-        for num_threads in thread_counts_to_test:
-            logging.info(
-                f"--- Running test with rdb-threads = {num_threads} ---"
-            )
-            client.config_set("rdb-threads", num_threads)
-
-            try:
-                # Use the FlamegraphProfiler context manager
-                # Conditionally run the profiler if the flag is set
-                if config.gen_flamegraph:
-                    with FlamegraphProfiler(pid=process.pid, output_dir=output_dir) as profiler:
-                        save_result = profile_blocking_save(client, process)
-                    
-                    flamegraph_file_name = f"flamegraph_{num_threads}threads.svg"
-                    profiler.generate(flamegraph_file_name)
-                else:
-                    # Otherwise, just run the save command without the profiler
-                    save_result = profile_blocking_save(client, process)
-
-            except FileNotFoundError as e:
-                logging.critical(
-                    f"Profiling failed: A required tool was not found. Check PERF_PATH and FLAME_GRAPH_REPO_PATH in your .env file. Error: {e}"
+        
+        for comp_option in compression_options:
+            logging.info(colorize(f"--- Running test with rdbcompression = {comp_option} ---", LOG_COLORS.CYAN))
+            # Enables us to only have to load keys one time to test save with both compression on and off
+            config.rdb_compression = comp_option # For data saving
+            client.config_set("rdbcompression", comp_option) 
+            
+            for num_threads in thread_counts_to_test:
+                logging.info(colorize(
+                    f"--- Running test with rdb-threads = {num_threads} ---", LOG_COLORS.CYAN)
                 )
-                continue
+                client.config_set("rdb-threads", num_threads)
 
-            # --- 4. Process and Aggregate Results ---
-            data_dir = Path(config.temp_dir) / f"node_data_{config.start_port}"
-            rdb_file_path = data_dir / "dump.rdb"
-            
-            rdb_file_size_bytes = (
-                rdb_file_path.stat().st_size if rdb_file_path.exists() else 0
-            )
-            
-            save_duration = save_result.get("save_duration_seconds", 0)
-            actual_throughput = 0
-            valkey_data_throughput = 0
-            num_keys = int(config.num_keys_millions * 1e6)
-            if save_result.get("status") == "ok" and save_duration > 0:
-                actual_throughput = (rdb_file_size_bytes / save_duration) * (10**-6)
-                valkey_data_throughput =((num_keys * (config.value_size_bytes + KEY_SIZE_BYTES)) / save_duration) * (10**-6)
+                try:
+                    # Use the FlamegraphProfiler context manager
+                    # Conditionally run the profiler if the flag is set
+                    if config.gen_flamegraph:
+                        with FlamegraphProfiler(pid=process.pid, output_dir=output_dir) as profiler:
+                            save_result = profile_blocking_save(client, process)
+                        
+                        flamegraph_file_name = f"flamegraph_{num_threads}threads.svg"
+                        profiler.generate(flamegraph_file_name)
+                    else:
+                        # Otherwise, just run the save command without the profiler
+                        save_result = profile_blocking_save(client, process)
 
-            # Combine all results into a single dictionary
-            final_result = {
-                "keys": num_keys,
-                "value_size": config.value_size_bytes,
-                "num_threads": num_threads,
-                "rdbcompression": config.rdb_compression,
-                "rdbchecksum": config.rdb_checksum,
-                "valkey_data_throughput_mb_s": valkey_data_throughput,
-                "actual_throughput_mb_s": actual_throughput,
-                "rdb_file_size_bytes": rdb_file_size_bytes,
-                **save_result,  # Unpack the detailed profiling results
-            }
-            all_results.append(final_result)
+                except FileNotFoundError as e:
+                    logging.critical(
+                        f"Profiling failed: A required tool was not found. Check PERF_PATH and FLAME_GRAPH_REPO_PATH in your .env file. Error: {e}"
+                    )
+                    continue
 
-            logging.info(
-                f"Finished test for {num_threads} threads. Deleting RDB file for next run."
-            )
-            delete_file(str(rdb_file_path))
+                # --- 4. Process and Aggregate Results ---
+                data_dir = Path(config.temp_dir) / f"node_data_{config.start_port}"
+                rdb_file_path = data_dir / "dump.rdb"
+                
+                rdb_file_size_bytes = (
+                    rdb_file_path.stat().st_size if rdb_file_path.exists() else 0
+                )
+                
+                save_duration = save_result.get("save_duration_seconds", 0)
+                actual_throughput = 0
+                valkey_data_throughput = 0
+                num_keys = int(config.num_keys_millions * 1e6)
+                if save_result.get("status") == "ok" and save_duration > 0:
+                    actual_throughput = (rdb_file_size_bytes / save_duration) * (10**-6)
+                    valkey_data_throughput =((num_keys * (config.value_size_bytes + KEY_SIZE_BYTES)) / save_duration) * (10**-6)
 
+                # Combine all results into a single dictionary
+                final_result = {
+                    "keys": num_keys,
+                    "value_size": config.value_size_bytes,
+                    "num_threads": num_threads,
+                    "rdbcompression": config.rdb_compression,
+                    "rdbchecksum": config.rdb_checksum,
+                    "valkey_data_throughput_mb_s": valkey_data_throughput,
+                    "actual_throughput_mb_s": actual_throughput,
+                    "rdb_file_size_bytes": rdb_file_size_bytes,
+                    **save_result,  # Unpack the detailed profiling results
+                }
+                all_results.append(final_result)
+
+                logging.info(
+                    f"Finished test for {num_threads} threads. Deleting RDB file for next run."
+                )
+                delete_file(str(rdb_file_path))
+        
         logging.info("--- All benchmark iterations completed ---")
         return all_results
 

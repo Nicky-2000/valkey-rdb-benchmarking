@@ -1,8 +1,10 @@
 import argparse
 import os
+import sys
 from pathlib import Path
 import time
 import logging
+from enum import Enum
 from dataclasses import dataclass, asdict
 from dotenv import load_dotenv
 
@@ -37,32 +39,41 @@ class BenchmarkConfig:
     log_file: str | None # Using | None for Python 3.10+, can be Optional[str] for older versions
     gen_flamegraph: bool
 
-def setup_logging(log_file: str | None):
-    """
-    Configures logging to either a file or the console.
-
-    Args:
-        log_file: The path to the log file. If None, logs are sent to the console.
-    """
-    # Define the format for log messages
-    log_format = '%(asctime)s - %(levelname)s - %(message)s'
-    
-    # Configure basic logging settings
-    logging.basicConfig(
-        level=logging.INFO,
-        format=log_format,
-        filename=log_file,  # If None, logs to console (stderr); otherwise, logs to the file
-        filemode='w',       # 'w' overwrites the file each time; use 'a' to append
+def setup_logging(log_file=None):
+    # Set up a standard formatter for all output
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s"
     )
-    
-    # If logging to console, also add a handler to explicitly direct to stdout
-    # to avoid mixing with potential stderr from other parts of the system.
-    if log_file is None:
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(logging.Formatter(log_format))
-        # Clear existing handlers and add our specific one
-        logging.getLogger().handlers = [console_handler]
 
+    # Get the root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    
+    # Clear existing handlers
+    if root_logger.hasHandlers():
+        root_logger.handlers.clear()
+        
+    # Create a console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    # If a log file is specified, add a file handler
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+
+
+class LOG_COLORS(Enum):
+    GREEN = "32"
+    YELLOW = "33"
+    CYAN = "36"
+    RED = "31"
+    BOLD_RED = "1;31"
+    
+def colorize(text: str, color: LOG_COLORS):
+    return f"\033[{color.value}m{text}\033[0m"
 
 def display_config(config: BenchmarkConfig):
     """Logs the benchmark configuration in a readable, aligned format."""
@@ -129,7 +140,7 @@ def parse_benchmark_args() -> BenchmarkConfig:
         help=f"Number of threads to save keys with (default: {RDB_THREADS_DEFAULT})",
     )
     parser.add_argument(
-        "--rdbcompression", type=str, default="yes", choices=["yes", "no"],
+        "--rdbcompression", type=str, default="yes", choices=["yes", "no", "both"],
         help="Use LZF compression for RDB files (default: 'yes')",
     )
     parser.add_argument(

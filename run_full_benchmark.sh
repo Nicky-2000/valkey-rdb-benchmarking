@@ -102,7 +102,6 @@ for config in "${benchmarks[@]}"; do
 
     echo -e "\n--- Running: $description ---" | tee -a "$LOG_FILE"
     python3 -m scripts.save_benchmark \
-        --tempfs true \
         --num-keys "${num_keys}" \
         --value-size "${value_size}" \
         --rdbcompression "${compression}" \

@@ -1,8 +1,8 @@
 import valkey
 from valkey.commands.json.path import Path
 from utilities.key_value_generation_utilities import make_random_key, make_deterministic_val, \
-    generate_user_data, generate_session_data, generate_product_data, generate_analytics_data
-from utilities.parse_args import BenchmarkConfig
+    generate_user_data, generate_session_data, generate_product_data, generate_analytics_data, generate_heavy_product_data
+from utilities.parse_args import BenchmarkConfig, WorkloadType
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import logging
@@ -15,18 +15,6 @@ from enum import Enum
 # --- Constants ---
 KEY_SIZE_BYTES = 16
 NUM_PROCESSES_FOR_DATA_POPULATION = 20
-
-# --- WorkloadType Enum ---
-class WorkloadType(Enum):
-    """Defines the types of workloads for data population."""
-    STRING = "string"
-    USER_DATA = "user"
-    SESSION_DATA = "session"
-    PRODUCT_DATA = "product"
-    ANALYTICS_DATA = "analytics"
-
-    def __str__(self):
-        return self.value
 
 # --- Data Population with valkey-benchmark (Existing Function) ---
 def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
@@ -160,6 +148,7 @@ def _populate_json_worker(connection_info: tuple[str, int], workload_type: Workl
         WorkloadType.USER_DATA.value: generate_user_data,
         WorkloadType.SESSION_DATA.value: generate_session_data,
         WorkloadType.PRODUCT_DATA.value: generate_product_data,
+        WorkloadType.PRODUCT_DATA_HEAVY.value: generate_heavy_product_data,
         WorkloadType.ANALYTICS_DATA.value: generate_analytics_data
     }
 

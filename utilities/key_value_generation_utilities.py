@@ -136,3 +136,62 @@ def generate_analytics_data():
             "browser": random.choice(["Chrome", "Firefox", "Safari", "Edge"]),
         },
     }
+
+
+def generate_heavy_product_data() -> dict[str, any]:
+    """
+    Generates a heavy JSON object for a detailed product listing with
+    a random number of variations and reviews.
+    
+    This object is designed to be complex, with nested arrays and objects, 
+    to simulate a challenging real-world workload.
+
+    Returns:
+        Dict[str, Any]: A dictionary representing the heavy JSON product data.
+    """
+    # Generate random counts for variations and reviews
+    num_variations = random.randint(1, 5) # A random number of variations
+    num_reviews = random.randint(20, 100) # A random number of reviews
+
+    # Generate the base product information
+    product_data = {
+        "product_id": fake.uuid4(),
+        "sku": f"SKU-{fake.unique.random_int(10000, 99999)}",
+        "name": fake.catch_phrase(),
+        "description": fake.paragraph(nb_sentences=5),
+        "category": random.sample(["electronics", "clothing", "home_goods", "books", "toys", "groceries", "sports"], k=random.randint(1, 3)),
+        "manufacturer": fake.company(),
+        "price_usd": str(fake.pydecimal(left_digits=3, right_digits=2, positive=True)),
+        "stock_quantity": fake.random_int(0, 100),
+        "images": [f"https://example.com/images/{fake.slug()}.jpg" for _ in range(random.randint(1, 4))],
+        "specifications": {
+            "material": random.choice(["plastic", "metal", "wood", "fabric", "glass"]),
+            "care_instructions": fake.sentence(nb_words=10),
+            "weight_kg": str(fake.pydecimal(left_digits=1, right_digits=2, positive=True))
+        }
+    }
+
+    # Generate nested product variations
+    variations = []
+    for _ in range(num_variations):
+        variations.append({
+            "color": fake.color_name(),
+            "size": random.choice(["XS", "S", "M", "L", "XL"]),
+            "stock": fake.random_int(0, 50),
+            "images": [f"https://example.com/images/{fake.slug()}.jpg"]
+        })
+    product_data["variations"] = variations
+    
+    # Generate a large list of reviews
+    reviews = []
+    for _ in range(num_reviews):
+        reviews.append({
+            "review_id": fake.uuid4(),
+            "user_id": fake.uuid4(),
+            "rating": fake.random_int(1, 5),
+            "comment": fake.paragraph(nb_sentences=2),
+            "timestamp": fake.date_time_this_year().isoformat()
+        })
+    product_data["reviews"] = reviews
+
+    return product_data

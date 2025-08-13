@@ -25,6 +25,7 @@ class WorkloadType(Enum):
     USER_DATA = "user"
     SESSION_DATA = "session"
     PRODUCT_DATA = "product"
+    PRODUCT_DATA_HEAVY = "heavy-product"
     ANALYTICS_DATA = "analytics"
 
     def __str__(self):

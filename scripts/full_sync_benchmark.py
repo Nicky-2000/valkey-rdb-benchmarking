@@ -22,7 +22,7 @@ from utilities.valkey_server_utilities import (
     stop_valkey_server,
     wait_for_server_to_start,
 )
-from utilities.populate_server import populate_data_with_benchmark, KEY_SIZE_BYTES
+from utilities.populate_server import populate_data_standalone, populate_data_with_benchmark, KEY_SIZE_BYTES
 from utilities.valkey_commands import get_db_key_count, profile_blocking_save
 
 # --- New Imports for Full Sync Benchmark ---
@@ -196,7 +196,7 @@ def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
         logging.info(
             f"Populating {config.num_keys_millions}M keys on Primary server..."
         )
-        populate_data_with_benchmark(primary_config)
+        populate_data_standalone(config, return_keys=False)
         num_keys_expected = primary_config.num_keys_millions * 1e6
         initial_primary_key_count = get_db_key_count(primary_config)
 

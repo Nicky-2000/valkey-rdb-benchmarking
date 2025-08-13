@@ -18,7 +18,18 @@ TEST_CONF_TEMPLATE_DEFAULT = "default.conf"
 TEMP_SUBDIR_DEFAULT = "valkey_temp"
 FLAMEGRAPH_OUTPUT_DIR_DEFAULT = "flamegraphs"
 
+# --- WorkloadType Enum ---
+class WorkloadType(Enum):
+    """Defines the types of workloads for data population."""
+    STRING = "string"
+    USER_DATA = "user"
+    SESSION_DATA = "session"
+    PRODUCT_DATA = "product"
+    ANALYTICS_DATA = "analytics"
 
+    def __str__(self):
+        return self.value
+    
 # --- Data Class for Configuration ---
 @dataclass(frozen=False)
 class BenchmarkConfig:
@@ -36,8 +47,10 @@ class BenchmarkConfig:
     rdb_checksum: str
     io_threads: int
     temp_dir: str
-    log_file: str | None # Using | None for Python 3.10+, can be Optional[str] for older versions
+    log_file: str | None
     gen_flamegraph: bool
+    valkey_json_module_path: str | None
+    workload_type: WorkloadType
 
 def setup_logging(log_file=None):
     # Set up a standard formatter for all output
@@ -109,6 +122,7 @@ def parse_benchmark_args() -> BenchmarkConfig:
     load_dotenv()
     # --- Get defaults from environment for path arguments ---
     default_server_path = os.getenv("VALKEY_SERVER_PATH")
+    default_json_path = os.getenv("VALKEY_JSON_MODULE_PATH")
     
     # Path Configuration
     parser.add_argument(
@@ -166,7 +180,15 @@ def parse_benchmark_args() -> BenchmarkConfig:
         "--ssd-path", type=str, default=None,
         help="Uses ssd mounted path provided."
     )
-
+    
+    # Workload Configuration
+    parser.add_argument(
+        "--workload", 
+        type=str, 
+        default=WorkloadType.STRING.value,
+        choices=[e.value for e in WorkloadType],
+        help="Type of data to populate (default: 'string')"
+    )
     
     # Logging Configuration
     parser.add_argument(
@@ -182,10 +204,16 @@ def parse_benchmark_args() -> BenchmarkConfig:
     )
 
     args = parser.parse_args()
-    
-    # --- Validate paths ---
+        
+    # --- Validation ---
     if not Path(args.valkey_server_path).is_file():
         parser.error(f"Valkey server path is not a valid file: {args.valkey_server_path}")
+    
+    json_workloads = {e.value for e in WorkloadType if e != WorkloadType.STRING}
+    if args.workload in json_workloads and not default_json_path:
+        parser.error("A JSON workload was requested, but VALKEY_JSON_MODULE_PATH is not set in the environment.")
+    if default_json_path and not Path(default_json_path).is_file():
+        parser.error(f"VALKEY_JSON_MODULE_PATH points to a file that does not exist: {default_json_path}")
 
     # --- Post-process arguments and create the dataclass instance ---
     if args.ssd_path:
@@ -211,5 +239,7 @@ def parse_benchmark_args() -> BenchmarkConfig:
         io_threads=args.io_threads,
         temp_dir=temp_dir,
         log_file=args.log_file,
-        gen_flamegraph=args.gen_flamegraph
+        gen_flamegraph=args.gen_flamegraph,
+        valkey_json_module_path=default_json_path,
+        workload_type=WorkloadType(args.workload)
     )

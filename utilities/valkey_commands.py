@@ -155,70 +155,85 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         logging.error(f"An unexpected error occurred during profiled SAVE on port {node_port}.", exc_info=True)
         return {"port": node_port, "status": "error", "error_message": str(e)}
 
+
+from typing import List, Tuple, Any
+from valkey.commands.json.path import Path
+
 def verify_data(
-    client: valkey.Valkey, keys_to_verify: list[str], value_size: int
+    client: valkey.Valkey, kv_to_verify: List[Tuple[str, Any]]
 ) -> bool:
     """
     Verifies the existence and correctness of keys in a Valkey instance.
 
-    This function fetches keys in batches using MGET, compares them to their
-    expected deterministic values, and logs the progress and final result.
+    This function fetches keys in batches using MGET or JSON.MGET, compares them to
+    their expected values, and logs the progress and final result.
 
     Args:
         client: An active valkey.Valkey client instance.
-        keys_to_verify: A list of keys that should exist in the database.
-        value_size: The expected size of the value for each key.
+        kv_to_verify: A list of (key, expected_value) tuples to verify. The expected_value
+                      can be a string for a string workload or a dictionary for a JSON workload.
 
     Returns:
-        True if all keys are verified successfully, False otherwise.
+        True if all key-value pairs are verified successfully, False otherwise.
     """
     logging.info("--- Starting Data Verification ---")
-    if not keys_to_verify:
+    if not kv_to_verify:
         logging.warning("Verification list is empty. Nothing to do.")
         return True
 
-    total_keys = len(keys_to_verify)
+    total_keys = len(kv_to_verify)
     errors_found = 0
-    batch_size = 5000  # Number of keys to fetch with each MGET command
+    batch_size = 5000  # Number of key-value pairs to fetch in each batch
     
-    logging.info(f"Preparing to verify {total_keys:,} keys with a batch size of {batch_size:,}.")
+    logging.info(f"Preparing to verify {total_keys:,} key-value pairs with a batch size of {batch_size:,}.")
     
     start_time = time.monotonic()
 
+    # Determine if we need to use MGET or JSON.MGET based on the data type
+    is_json_workload = isinstance(kv_to_verify[0][1], (dict, list))
+    keys_to_verify = [kv[0] for kv in kv_to_verify]
+    
     for i in range(0, total_keys, batch_size):
         key_batch = keys_to_verify[i : i + batch_size]
         
         try:
-            # Use mget for efficient batch retrieval
-            actual_values = client.mget(key_batch)
+            if is_json_workload:
+                # Use JSON.MGET for JSON data
+                actual_values = client.json().mget(key_batch, Path.root_path())
+            else:
+                # Use MGET for string data
+                actual_values = client.mget(key_batch)
 
             # Compare each key's actual value with its expected value
             for j, key in enumerate(key_batch):
-                expected_value = make_deterministic_val(key, value_size)
+                expected_value = kv_to_verify[i + j][1]
+                actual_value = actual_values[j]
                 
-                # The client decodes responses, so we compare strings directly
-                if actual_values[j] != expected_value:
-                    logging.warning(f"Key MISMATCH: '{key}'. Expected '{expected_value}', got '{actual_values[j]}'.")
+                # For JSON data, the return type is a list of dictionaries, so we compare the first element
+                # if actual_value is None, it means the key was not found.
+                if is_json_workload and actual_value and isinstance(actual_value, list):
+                    actual_value = actual_value[0]
+
+                if actual_value != expected_value:
+                    logging.warning(f"Key MISMATCH: '{key}'. Expected '{expected_value}', got '{actual_value}'.")
                     errors_found += 1
         
         except valkey.exceptions.ValkeyError as e:
-            logging.error(f"A Valkey error occurred during MGET for a batch starting with key '{key_batch[0]}'.", exc_info=True)
+            logging.error(f"A Valkey error occurred during batch retrieval for a batch starting with key '{key_batch[0]}'.", exc_info=True)
             errors_found += len(key_batch) # Assume all keys in the failed batch are errors
         
         except Exception as e:
             logging.error("An unexpected error occurred during data verification.", exc_info=True)
             errors_found += len(key_batch)
-            # Stop verification on unexpected errors
-            break 
+            break  # Stop verification on unexpected errors
 
     # --- Final Summary ---
     elapsed_time = time.monotonic() - start_time
     logging.info(f"Verification finished in {elapsed_time:.2f} seconds.")
     
     if errors_found == 0:
-        logging.info(f"✅ Success! All {total_keys:,} keys were verified correctly.")
+        logging.info(f"✅ Success! All {total_keys:,} key-value pairs were verified correctly.")
         return True
     else:
         logging.error(f"❌ Verification Failed. Found {errors_found:,} errors out of {total_keys:,} keys.")
         return False
-    

@@ -25,10 +25,9 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
     # Always ensure the directory exists after the optional cleanup
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    # Command to start Valkey server, constructed from the config
+    # Command to start Valkey server
     command = [
         str(config.valkey_server_path),
-        # config.conf_template,
         "--port",
         str(config.start_port),
         "--dir",
@@ -40,17 +39,25 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
         "--rdb-threads",
         str(config.rdb_threads),
         "--save",
-        "",  # Disable automatic saving
+        "",
         "--rdbcompression",
         config.rdb_compression,
         "--rdbchecksum",
         config.rdb_checksum,
         "--dbfilename",
         "dump.rdb",
-        # "repl-diskless-sync",
-        # "yes",
     ]
 
+    # Dynamically add the --loadmodule argument if a path is provided in the config
+    if config.valkey_json_module_path:
+        if not Path(config.valkey_json_module_path).is_file():
+            logging.error(f"Valkey JSON module not found at: {config.valkey_json_module_path}")
+            return None
+        command.extend(["--loadmodule", config.valkey_json_module_path])
+        logging.info(f"Valkey-JSON module will be loaded from: {config.valkey_json_module_path}")
+
+    logging.info(f"Valkey startup command: {' '.join(command)}")
+    
     try:
         # Start the server process
         process = subprocess.Popen(command, preexec_fn=os.setsid)

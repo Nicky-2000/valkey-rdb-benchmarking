@@ -6,7 +6,7 @@ from utilities.valkey_server_utilities import (
     stop_valkey_server,
     wait_for_server_to_start,
 )
-from utilities.populate_server import populate_data_standalone, KEY_SIZE_BYTES
+from utilities.populate_server import WorkloadType, populate_data_standalone, KEY_SIZE_BYTES
 from utilities.valkey_commands import (
     get_db_key_count,
     trigger_blocking_save,
@@ -40,7 +40,8 @@ def rdb_save_validity_test(config: BenchmarkConfig) -> bool:
             return False
 
         # --- 2. Populate Data and Verify Initial State ---
-        keys_to_test = populate_data_standalone(config)
+        keys_to_test = populate_data_standalone(config, return_keys=True)
+        
         initial_key_count = get_db_key_count(config)
 
         if initial_key_count != len(keys_to_test):
@@ -80,7 +81,7 @@ def rdb_save_validity_test(config: BenchmarkConfig) -> bool:
             return False
 
         # --- 5. Final Data Verification ---
-        if not verify_data(client, keys_to_test, config.value_size_bytes):
+        if not verify_data(client, keys_to_test):
             logging.error("Data verification failed after RDB reload.")
             return False
 

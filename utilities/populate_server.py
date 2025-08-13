@@ -1,20 +1,34 @@
+import valkey
+from valkey.commands.json.path import Path
+from utilities.key_value_generation_utilities import make_random_key, make_deterministic_val, \
+    generate_user_data, generate_session_data, generate_product_data, generate_analytics_data
+from utilities.parse_args import BenchmarkConfig
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import logging
 import subprocess
 import time
 import os
 import sys
-import valkey
-from utilities.key_value_generation_utilities import make_random_key, make_deterministic_val
-from utilities.parse_args import BenchmarkConfig
+from enum import Enum
 
+# --- Constants ---
 KEY_SIZE_BYTES = 16
-
 NUM_PROCESSES_FOR_DATA_POPULATION = 20
-EXPECTED_KEY_VALUES = []
 
-# ./src/valkey-benchmark -h 127.0.0.1 -p 7001 -t SET -n 50000000 -d 100 -c 200 -P 64 -r 50000000 --sequential
+# --- WorkloadType Enum ---
+class WorkloadType(Enum):
+    """Defines the types of workloads for data population."""
+    STRING = "string"
+    USER_DATA = "user"
+    SESSION_DATA = "session"
+    PRODUCT_DATA = "product"
+    ANALYTICS_DATA = "analytics"
 
+    def __str__(self):
+        return self.value
+
+# --- Data Population with valkey-benchmark (Existing Function) ---
 def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
     """
     Populates a standalone Valkey instance using the valkey-benchmark command,
@@ -70,7 +84,7 @@ def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
             if line_count % 100 == 0:
                 sys.stdout.write(line)
                 sys.stdout.flush()
-        
+            
         # Ensure the last line is printed if the total isn't a multiple of 100
         if line_count % 100 != 0:
             sys.stdout.write(line)
@@ -95,105 +109,154 @@ def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
         logging.error(f"An unexpected error occurred during valkey-benchmark execution: {e}", exc_info=True)
         return False
 
-
-# --- Data Population (Multiprocessed) ---
-def _populate_worker(
-    keys: list[str],
-    connection_info: tuple[str, int],  # Single (host, port) tuple for standalone
-    value_size: int,
-):
+# --- Worker for String Data (Corrected to return kv tuples) ---
+def _populate_string_worker(connection_info: tuple[str, int], value_size: int, num_keys_for_worker: int, return_keys: bool):
     """
-    A worker process that connects to Valkey and populates a given chunk of keys.
-
-    Args:
-        keys: A list of keys for this worker to insert.
-        connection_info: A (host, port) tuple for the Valkey server.
-        value_size: The size of the value to generate for each key.
-
-    Returns:
-        The number of keys successfully inserted by this worker.
+    A worker process that connects to Valkey, generates its own keys and values, and populates them.
+    Returns the count of keys and optionally a list of (key, value) tuples.
     """
     host, port = connection_info
     batch_size = 1 if value_size > 10_000 else 50_000
+    kv_list = [] if return_keys else None
+    
     try:
         client = valkey.Valkey(host=host, port=port, decode_responses=True)
-        client.ping()  # Verify connection
+        client.ping()
 
         pipe = client.pipeline(transaction=False)
-        num_processed = 0
-        for i, key in enumerate(keys):
+        for i in range(num_keys_for_worker):
+            key = make_random_key(key_length=KEY_SIZE_BYTES)
             value = make_deterministic_val(key, value_size)
             pipe.set(key, value)
-            num_processed += 1
-
-            # Execute pipeline batch every 'batch_size' keys
+            
+            if return_keys:
+                kv_list.append((key, value))
+                
             if (i + 1) % batch_size == 0:
                 pipe.execute()
-
-        pipe.execute()  # Execute any remaining commands after the loop (important for last batch)
-
-        return len(keys)  # Indicate success
+        pipe.execute()
+        
+        # Return the count and the list of (key, value) tuples
+        return num_keys_for_worker, kv_list
     except Exception as e:
-        logging.error(f"A worker process failed: {e}", exc_info=True)
-        return 0 # Return 0 on failure
+        logging.error(f"A string worker process failed: {e}", exc_info=True)
+        return 0, None
     finally:
         if 'client' in locals() and client:
             client.connection_pool.disconnect()
+ 
 
-def populate_data_standalone(config: BenchmarkConfig):
+# --- Worker for JSON Data (Corrected) ---
+def _populate_json_worker(connection_info: tuple[str, int], workload_type: WorkloadType, num_keys_for_worker: int, start_index: int, return_keys: bool):
     """
-    Generates keys and populates a standalone Valkey instance using multiple processes.
+    A worker process that generates its own JSON keys and populates them.
+    Returns the count of keys and optionally the list of keys.
+    """
+    host, port = connection_info
+    batch_size = 500
+    kv_list = [] if return_keys else None
+    
+    json_generators = {
+        WorkloadType.USER_DATA.value: generate_user_data,
+        WorkloadType.SESSION_DATA.value: generate_session_data,
+        WorkloadType.PRODUCT_DATA.value: generate_product_data,
+        WorkloadType.ANALYTICS_DATA.value: generate_analytics_data
+    }
+
+    try:
+        client = valkey.Valkey(host=host, port=port, decode_responses=True)
+        json_client = client.json()
+        client.ping()
+
+        pipe = client.pipeline(transaction=False)
+        keys_inserted_count = 0
+        generate_func = json_generators.get(workload_type.value)
+        
+        if not generate_func:
+            logging.error(f"Invalid JSON workload type received by worker: {workload_type.value}")
+            return 0, None
+
+        for i in range(num_keys_for_worker):
+            key_index = start_index + i
+            key = f"{workload_type.value}:{key_index}"  
+            data = generate_func()
+            pipe.json().set(key, Path.root_path(), data)
+            
+            if return_keys:
+                # Append the tuple of key and the generated JSON data
+                kv_list.append((key, data))
+
+            keys_inserted_count += 1
+            if (i + 1) % batch_size == 0:
+                pipe.execute()
+
+        pipe.execute()
+        # Return the count and the list of (key, value) tuples
+        return keys_inserted_count, kv_list
+    except Exception as e:
+        logging.error(f"A JSON worker process failed: {e}", exc_info=True)
+        return 0, None
+    finally:
+        if 'client' in locals() and client:
+            client.connection_pool.disconnect()      
+def populate_data_standalone(config: BenchmarkConfig, return_keys: bool = False):
+    """
+    Populates a Valkey instance using multiple processes, with each worker
+    generating its own keys. Conditionally returns a list of all populated (key, value) tuples.
 
     Args:
-        config: The BenchmarkConfig object containing run parameters.
-    """
+        config: The BenchmarkConfig object.
+        return_keys: A boolean flag to determine if the function should return the list of keys and values.
+                     Defaults to False.
+    """    
     num_keys = int(config.num_keys_millions * 1e6)
-    logging.info(f"Generating {num_keys:,} keys in memory...")
+    logging.info(f"Starting data population for {num_keys:,} {config.workload_type.value} keys...")
     start_time = time.monotonic()
     
-    # 1. Generate all keys in the main process first.
-    #    This ensures the list is identical for every benchmark run.
-    keys_to_load = [make_random_key(key_length=KEY_SIZE_BYTES) for _ in range(num_keys)]
+    keys_per_worker = num_keys // NUM_PROCESSES_FOR_DATA_POPULATION
     
-    generation_time = time.monotonic() - start_time
-    logging.info(f"Key generation finished in {generation_time:.2f} seconds.")
-    
-    logging.info(f"Starting data population with {NUM_PROCESSES_FOR_DATA_POPULATION} processes...")
-    start_time = time.monotonic()
-    
-    # 2. Distribute the keys among worker processes.
-    chunk_size = (len(keys_to_load) + NUM_PROCESSES_FOR_DATA_POPULATION - 1) // NUM_PROCESSES_FOR_DATA_POPULATION
-    connection_info = ("127.0.0.1", config.start_port)
-
     total_keys_inserted = 0
+    total_kv_list = [] if return_keys else None
+    
     with ProcessPoolExecutor(max_workers=NUM_PROCESSES_FOR_DATA_POPULATION) as executor:
-        # Create a list of key chunks for each worker
-        key_chunks = [
-            keys_to_load[i : i + chunk_size]
-            for i in range(0, len(keys_to_load), chunk_size)
-        ]
+        futures = []
         
-        # Submit each chunk as a task to the process pool
-        futures = [
-            executor.submit(_populate_worker, chunk, connection_info, config.value_size_bytes)
-            for chunk in key_chunks
-        ]
+        # Determine the correct worker and arguments
+        if config.workload_type.value  == WorkloadType.STRING.value:
+            futures = [
+                executor.submit(_populate_string_worker, ("127.0.0.1", config.start_port), config.value_size_bytes, keys_per_worker, return_keys)
+                for _ in range(NUM_PROCESSES_FOR_DATA_POPULATION)
+            ]
+        else: # For all JSON workload types
+            futures = [
+                executor.submit(_populate_json_worker, ("127.0.0.1", config.start_port), config.workload_type, keys_per_worker, i * keys_per_worker, return_keys)
+                for i in range(NUM_PROCESSES_FOR_DATA_POPULATION)
+            ]
 
-        # 3. Collect the results as they complete.
+        # Handle any remaining keys if num_keys isn't perfectly divisible
+        remaining_keys = num_keys % NUM_PROCESSES_FOR_DATA_POPULATION
+        if remaining_keys > 0:
+            if config.workload_type == WorkloadType.STRING:
+                futures.append(executor.submit(_populate_string_worker, ("127.0.0.1", config.start_port), config.value_size_bytes, remaining_keys, return_keys))
+            else:
+                futures.append(executor.submit(_populate_json_worker, ("127.0.0.1", config.start_port), config.workload_type, remaining_keys, NUM_PROCESSES_FOR_DATA_POPULATION * keys_per_worker, return_keys))
+
         for future in as_completed(futures):
             try:
-                keys_inserted = future.result()
+                keys_inserted, kv_from_worker = future.result()
                 if keys_inserted > 0:
                     total_keys_inserted += keys_inserted
+                    if return_keys and kv_from_worker:
+                        total_kv_list.extend(kv_from_worker)
                     logging.info(f"A worker finished, {total_keys_inserted:,} / {num_keys:,} keys inserted so far.")
             except Exception as e:
                 logging.error(f"A task generated an exception: {e}", exc_info=True)
 
-    # 4. Log a final summary.
     load_time = time.monotonic() - start_time
     keys_per_second = total_keys_inserted / load_time if load_time > 0 else 0
 
     logging.info("--- Data Population Summary ---")
+    logging.info(f"Workload Type:              {config.workload_type.value}")
     logging.info(f"Target Keys:                {num_keys:,}")
     logging.info(f"Successfully Set:           {total_keys_inserted:,}")
     logging.info(f"Data Population Total Time: {load_time:.2f} seconds")
@@ -202,4 +265,4 @@ def populate_data_standalone(config: BenchmarkConfig):
     if total_keys_inserted != num_keys:
         logging.warning("Data population may be incomplete. Check logs for errors.")
         
-    return keys_to_load
+    return total_kv_list

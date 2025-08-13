@@ -6,24 +6,34 @@ set -e
 # --- Environment Variables ---
 # You can customize these if your repos have different names
 REPO_VALKEY_URL="https://github.com/Nicky-2000/valkey.git"
+REPO_VALKEY_JSON_URL="https://github.com/valkey-io/valkey-json.git"
 REPO_BENCHMARK_URL="https://github.com/Nicky-2000/valkey-rdb-benchmarking.git"
 REPO_VALKEY_DIR="valkey"
+REPO_VALKEY_JSON_DIR="valkey-json"
 REPO_BENCHMARK_DIR="valkey-rdb-benchmarking"
 
 # --- 1. Install Prerequisites ---
 echo "--- Installing essential packages ---"
 sudo apt-get update
 sudo apt-get install -y git python3-venv build-essential
+sudo apt-get install -y cmake
+
 
 # --- 2. Clone Repositories ---
 echo "--- Cloning repositories ---"
 if [ ! -d "$REPO_VALKEY_DIR" ]; then
     git clone "$REPO_VALKEY_URL"
     cd "$REPO_VALKEY_DIR"
-    git checkout rdb-save-multi-thread
+    git checkout multi-threaded-RDB-Save
     cd ..
 else
     echo "Valkey repository already exists. Skipping clone."
+fi
+
+if [ ! -d "$REPO_VALKEY_JSON_URL" ]; then
+    git clone "$REPO_VALKEY_JSON_URL"
+else
+    echo "Valkey-Json repository already exists. Skipping clone."
 fi
 
 if [ ! -d "$REPO_BENCHMARK_DIR" ]; then
@@ -32,10 +42,18 @@ else
     echo "Benchmark repository already exists. Skipping clone."
 fi
 
+
+
 # --- 3. Build Valkey Server ---
 echo "--- Building Valkey server ---"
 cd "$REPO_VALKEY_DIR"
 make
+cd ..
+
+# --- 3. Build Valkey JSON Module ---
+echo "--- Building Valkey server ---"
+cd "$REPO_VALKEY_JSON_DIR"
+./build.sh
 cd ..
 
 # --- 4. Set up Python Environment ---
@@ -53,10 +71,14 @@ echo "--- Creating .env file with Valkey binary paths ---"
 # Get the absolute path to the cloned valkey directory
 VALKEY_ROOT_PATH=$(realpath "$REPO_VALKEY_DIR")
 
+REPO_VALKEY_JSON_ROOT_PATH=$(realpath "$REPO_VALKEY_JSON_DIR")
+
 # Construct the paths to the binaries
 VALKEY_SERVER_BIN="$VALKEY_ROOT_PATH/src/valkey-server"
 VALKEY_CLI_BIN="$VALKEY_ROOT_PATH/src/valkey-cli"
 VALKEY_BENCHMARK_BIN="$VALKEY_ROOT_PATH/src/valkey-benchmark"
+VALKEY_JSON_MODULE_BIN="$REPO_VALKEY_JSON_ROOT_PATH/build/src/libjson.so"
+
 
 # Create the .env file in the benchmark repo root
 ENV_FILE_PATH="$REPO_BENCHMARK_DIR/.env"
@@ -65,6 +87,7 @@ cat <<EOF > "$ENV_FILE_PATH"
 VALKEY_SERVER_PATH=$VALKEY_SERVER_BIN
 VALKEY_CLIENT_PATH=$VALKEY_CLI_BIN
 VALKEY_BENCHMARK_PATH=$VALKEY_BENCHMARK_BIN
+VALKEY_JSON_MODULE_PATH=$VALKEY_JSON_MODULE_BIN
 EOF
 
 echo "Created .env file at $ENV_FILE_PATH with the following content:"

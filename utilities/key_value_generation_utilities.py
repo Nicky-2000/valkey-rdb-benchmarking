@@ -8,6 +8,7 @@ from faker import Faker
 
 fake = Faker()
 
+
 def make_random_key(key_length: int = 10) -> str:
     # Make a random key of len 'key_length' out of characters and digits
     random_key = "".join(
@@ -47,6 +48,7 @@ def make_deterministic_val(key: str, value_length: int) -> str:
 
 # --- JSON Generation Functions ---
 
+
 def generate_user_data():
     """Generates a JSON object for user data."""
     return {
@@ -61,10 +63,11 @@ def generate_user_data():
             "theme": random.choice(["dark", "light"]),
             "notifications": {
                 "email": random.choice([True, False]),
-                "sms": random.choice([True, False])
-            }
-        }
+                "sms": random.choice([True, False]),
+            },
+        },
     }
+
 
 def generate_session_data():
     """Generates a JSON object representing a user's session data."""
@@ -72,17 +75,23 @@ def generate_session_data():
         "session_id": fake.uuid4(),
         "user_id": fake.uuid4(),
         "login_time": fake.date_time_this_month().isoformat(),
-        "last_active": fake.date_time_this_day().isoformat(),
+        # Use a provider that is known to work in your version
+        "last_active": fake.date_time_this_month().isoformat(),
         "cart_items": [
-            {"product_id": fake.uuid4(), "quantity": random.randint(1, 5), "price": fake.random_int(10, 1000)}
+            {
+                "product_id": fake.uuid4(),
+                "quantity": f"{random.randint(1, 5)}",
+                "price": f"{fake.random_int(10, 1000)}",
+            }
             for _ in range(random.randint(0, 3))
         ],
-        "csrf_token": fake.md5()
+        "csrf_token": fake.md5(),
     }
+
 
 def generate_product_data():
     """Generates a JSON object for a product in an e-commerce catalog."""
-    
+
     # Generate a Decimal object for the price
     price_decimal = fake.pydecimal(left_digits=3, right_digits=2, positive=True)
 
@@ -90,23 +99,27 @@ def generate_product_data():
         "product_id": fake.uuid4(),
         "name": fake.catch_phrase(),
         "description": fake.paragraph(nb_sentences=3),
-        "price": str(price_decimal), # CONVERT DECIMAL TO STRING HERE
+        "price": str(price_decimal),
         "currency": "USD",
         "stock": random.randint(0, 500),
-        "category": random.choice(["electronics", "clothing", "home_goods", "books", "toys"]),
+        "category": random.choice(
+            ["electronics", "clothing", "home_goods", "books", "toys"]
+        ),
         "features": {
             "dimensions": f"{random.uniform(5, 50):.1f}x{random.uniform(5, 50):.1f}x{random.uniform(5, 50):.1f} cm",
-            "weight_kg": f"{random.uniform(0.1, 10):.2f}"
+            "weight_kg": f"{random.uniform(0.1, 10):.2f}",
         },
         "reviews": [
             {
                 "user_id": fake.uuid4(),
                 "rating": random.randint(1, 5),
                 "comment": fake.sentence(nb_words=10),
-                "timestamp": fake.date_time_this_year().isoformat()
-            } for _ in range(random.randint(0, 5))
-        ]
+                "timestamp": fake.date_time_this_year().isoformat(),
+            }
+            for _ in range(random.randint(0, 5))
+        ],
     }
+
 
 def generate_analytics_data():
     """Generates a JSON object for real-time analytics metrics."""
@@ -120,6 +133,6 @@ def generate_analytics_data():
         "duration_ms": random.randint(50, 5000),
         "device_info": {
             "os": random.choice(["Windows", "macOS", "Linux", "iOS", "Android"]),
-            "browser": random.choice(["Chrome", "Firefox", "Safari", "Edge"])
-        }
+            "browser": random.choice(["Chrome", "Firefox", "Safari", "Edge"]),
+        },
     }

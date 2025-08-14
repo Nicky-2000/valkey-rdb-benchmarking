@@ -42,7 +42,7 @@ def rdb_save_validity_test(config: BenchmarkConfig) -> bool:
         # --- 2. Populate Data and Verify Initial State ---
         keys_to_test = populate_data_standalone(config, return_keys=True)
         
-        initial_key_count = get_db_key_count(config)
+        initial_key_count = get_db_key_count(client)
 
         if initial_key_count != len(keys_to_test):
             logging.error(
@@ -71,7 +71,7 @@ def rdb_save_validity_test(config: BenchmarkConfig) -> bool:
             logging.critical("Restarted Valkey server did not become reachable.")
             return False
 
-        reloaded_key_count = get_db_key_count(config)
+        reloaded_key_count = get_db_key_count(client)
         logging.info(f"Server reloaded {reloaded_key_count:,} keys from RDB file.")
 
         if initial_key_count != reloaded_key_count:

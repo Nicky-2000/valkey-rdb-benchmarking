@@ -123,7 +123,7 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
         logging.info(f"Populating {config.num_keys_millions}M keys on Primary server...")
         populate_data_standalone(config, return_keys=False)
         num_keys_expected = primary_config.num_keys_millions * 1e6
-        initial_primary_key_count = get_db_key_count(primary_config)
+        initial_primary_key_count = get_db_key_count(primary_client)
         
         if initial_primary_key_count != num_keys_expected:
             logging.error(f"Primary key population mismatch: Expected {num_keys_expected:,} keys but DB has {initial_primary_key_count:,}.")

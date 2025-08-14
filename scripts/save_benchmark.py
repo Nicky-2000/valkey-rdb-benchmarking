@@ -63,7 +63,7 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
 
         num_keys_expected = config.num_keys_millions * 1e6
         # keys_to_test = populate_data_standalone(config)
-        initial_key_count = get_db_key_count(config)
+        initial_key_count = get_db_key_count(client)
 
         if initial_key_count != num_keys_expected:
             logging.error(

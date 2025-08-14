@@ -98,8 +98,9 @@ def profile_primary_bgsave(
         # Wait for the child process to exit. This is a blocking call.
         child_proc.wait()
         
-        logging.info("BGSAVE child process has exited. Getting final metrics...")
         bgsave_duration = time.monotonic() - start_time
+        logging.info(colorize(f"BGSAVE child process has exited. Time: {bgsave_duration}. Getting final metrics..."), LOG_COLORS.GREEN)
+
         # IMPORTANT: You must get the final metrics *after* the process has exited.
         # Calling io_counters() or cpu_times() on a dead process can raise an error
         # psutil.wait() returns the exit code, but we still need the final metrics.

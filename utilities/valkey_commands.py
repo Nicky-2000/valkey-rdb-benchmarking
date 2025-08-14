@@ -114,7 +114,8 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         valkey_proc = psutil.Process(server_process.pid)
         
         # --- Capture metrics before SAVE ---
-        cpu_before = valkey_proc.cpu_times()
+        # Capture system-wide CPU times
+        system_cpu_before = psutil.cpu_times()
         io_before = valkey_proc.io_counters()
         mem_before = valkey_proc.memory_info()
         ctx_before = valkey_proc.num_ctx_switches()
@@ -125,7 +126,8 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         save_duration = time.monotonic() - save_start_time
 
         # --- Capture metrics after SAVE ---
-        cpu_after = valkey_proc.cpu_times()
+        # Capture system-wide CPU times
+        system_cpu_after = psutil.cpu_times()
         io_after = valkey_proc.io_counters()
         mem_after = valkey_proc.memory_info()
         ctx_after = valkey_proc.num_ctx_switches()
@@ -133,8 +135,13 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         logging.info(colorize(f"Profiled SAVE on port {node_port} finished in {save_duration:.4f} seconds.", LOG_COLORS.GREEN))
 
         # --- Calculate and return the results ---
-        cpu_total_time = (cpu_after.user - cpu_before.user) + (cpu_after.system - cpu_before.system)
+        cpu_total_time = (system_cpu_after.user - system_cpu_before.user) + \
+                         (system_cpu_after.system - system_cpu_before.system)
+        
         cpu_utilization = (cpu_total_time / save_duration) * 100 if save_duration > 0 else 0
+        
+        # Calculate system-wide I/O wait time
+        iowait_time = system_cpu_after.iowait - system_cpu_before.iowait
 
         return {
             "status": "ok",
@@ -147,6 +154,8 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
             "memory_rss_bytes": mem_after.rss,
             "context_switches_voluntary": ctx_after.voluntary - ctx_before.voluntary,
             "context_switches_involuntary": ctx_after.involuntary - ctx_before.involuntary,
+            "iowait_time_seconds": iowait_time, # NEW METRIC
+            "iowait_percentage": (iowait_time / save_duration) * 100 # NEW METRIC
         }
     except psutil.NoSuchProcess:
         logging.error(f"Process with PID {server_process.pid} not found for profiling.", exc_info=True)

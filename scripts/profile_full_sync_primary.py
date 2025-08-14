@@ -32,6 +32,7 @@ from utilities.valkey_commands import get_db_key_count
 
 PRIMARY_PORT_DEFAULT = 7000
 
+
 def profile_primary_bgsave(
     primary_process: subprocess.Popen,
     primary_log_file: Path
@@ -91,6 +92,7 @@ def profile_primary_bgsave(
         "primary_cpu_time_seconds": cpu_time_seconds,
         "primary_io_write_mb_s": throughput_mb_s,
     }
+
 
 def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
     primary_process = None

@@ -73,7 +73,7 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
 
         # --- 3. Iterate, Profile, and Collect Results ---
         all_results = []
-        thread_counts_to_test = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14]
+        thread_counts_to_test = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 25, 30]
 
         for comp_option in compression_options:
             logging.info(
@@ -198,9 +198,9 @@ def main():
 
     if results:
         logging.info(f"Benchmark finished. Collected {len(results)} results.")
-
+        tempfs = "yes" if "dev/shm/" in config.temp_dir else "no"
         csv_file_name = (
-            f"save_summary_workload_{config.workload_type.value}_{config.num_keys_millions}keys_{config.value_size_bytes}B_tempfs_{config.temp_dir[0:10]}"
+            f"save_summary_workload_{config.workload_type.value}_{config.num_keys_millions}keys_{config.value_size_bytes}B_tempfs_{tempfs}"
             f"_comp-{config.rdb_compression}_csum-{config.rdb_checksum}.csv"
         )
 

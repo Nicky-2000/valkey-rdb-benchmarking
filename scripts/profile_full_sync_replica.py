@@ -82,6 +82,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
         logging.error(f"Could not connect to primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}. Is it running and populated?", exc_info=True)
         return None
 
+    logging.info(colorize(f"Found Primary with {num_keys_expected} keys", LOG_COLORS.GREEN))
     thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
 
     for num_threads in thread_counts_to_test:

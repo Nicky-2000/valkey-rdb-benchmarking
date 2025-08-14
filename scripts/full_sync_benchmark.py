@@ -272,7 +272,7 @@ def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
         )
         populate_data_standalone(config, return_keys=False)
         num_keys_expected = primary_config.num_keys_millions * 1e6
-        initial_primary_key_count = get_db_key_count(primary_config)
+        initial_primary_key_count = get_db_key_count(primary_client)
 
         if initial_primary_key_count != num_keys_expected:
             logging.error(
@@ -320,7 +320,7 @@ def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
                     continue
 
                 # --- 5. Initiate Full Sync ---
-                initial_replica_key_count = get_db_key_count(replica_config)
+                initial_replica_key_count = get_db_key_count(replica_client)
                 assert initial_replica_key_count == 0
 
                 logging.info(

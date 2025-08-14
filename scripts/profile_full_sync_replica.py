@@ -55,7 +55,7 @@ def monitor_full_sync_via_logs(replica_log_path: Path, timeout_seconds: int = 36
 
                 if "PRIMARY <-> REPLICA sync: Finished with success" in line:
                     runtime = time.monotonic() - start_time
-                    logging.info(colorize("Detected successful sync from log file. Runtime: {runtime}", LOG_COLORS.GREEN))
+                    logging.info(colorize(f"Detected successful sync from log file. Runtime: {runtime}", LOG_COLORS.GREEN))
                     return runtime
                 
                 if ("Replication error" in line or "SYNC with master in non blocking mode failed" in line):

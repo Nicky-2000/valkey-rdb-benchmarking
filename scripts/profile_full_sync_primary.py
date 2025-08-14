@@ -42,6 +42,14 @@ import re  # Import the regex module
 from typing import Dict, Any
 
 
+import logging
+from pathlib import Path
+import time
+import subprocess
+import psutil
+import re
+from typing import Dict, Any
+
 def profile_primary_bgsave(
     primary_process: subprocess.Popen,
     primary_log_file: Path
@@ -56,46 +64,62 @@ def profile_primary_bgsave(
     
     try:
         # --- 1. Find the PID of the child process from the log ---
+        logging.info("Tailing log file to find BGSAVE child PID...")
         with open(primary_log_file, "r", encoding="utf-8") as log_file:
-            log_file.seek(0, 2)  # Go to the end
+            log_file.seek(0, 2)
             while child_pid is None:
                 line = log_file.readline()
                 if not line:
                     time.sleep(0.1)
                     continue
-
-                # Use a regular expression to find the PID
-                # The pattern looks for "started by pid <number> to pipe"
+                logging.info(f"Log Line: {line}")
                 match = re.search(r'started by pid (\d+) to pipe', line)
                 if match:
                     child_pid = int(match.group(1))
-                    logging.info(colorize(f"Detected BGSAVE child process with PID: {child_pid}. Starting profiling.", LOG_COLORS.GREEN))
+                    logging.info(colorize(f"Detected BGSAVE child process with PID: {child_pid}.", LOG_COLORS.GREEN))
                     break
         
         if child_pid is None:
             logging.error("Failed to find BGSAVE child PID in log.")
             return {"status": "error", "error_message": "Child PID not found"}
 
+        logging.info(f"Creating psutil.Process object for PID: {child_pid}...")
         child_proc = psutil.Process(child_pid)
+        logging.info("psutil.Process object created successfully.")
         
         # --- 2. Profile the child process ---
+        logging.info("Attempting to get initial metrics...")
         start_time = time.monotonic()
         io_before = child_proc.io_counters()
         cpu_before = child_proc.cpu_times()
-        
-        # Wait for the child process to exit
+        logging.info("Initial metrics retrieved. Waiting for process to exit...")
+
+        # Wait for the child process to exit. This is a blocking call.
         child_proc.wait()
         
+        logging.info("BGSAVE child process has exited. Getting final metrics...")
         bgsave_duration = time.monotonic() - start_time
-        io_after = child_proc.io_counters()
-        cpu_after = child_proc.cpu_times()
-
+        # IMPORTANT: You must get the final metrics *after* the process has exited.
+        # Calling io_counters() or cpu_times() on a dead process can raise an error
+        # psutil.wait() returns the exit code, but we still need the final metrics.
+        # Let's re-get the Process object, which might be a 'ZombieProcess'
+        try:
+            # We need to re-instantiate the Process object to get final metrics
+            final_child_proc = psutil.Process(child_pid)
+            io_after = final_child_proc.io_counters()
+            cpu_after = final_child_proc.cpu_times()
+        except psutil.NoSuchProcess:
+            logging.warning("Process disappeared before final metrics could be captured. Metrics may be inaccurate.")
+            io_after = io_before # Use a fallback
+            cpu_after = cpu_before
+        
     except FileNotFoundError:
         logging.error(f"Primary log file not found at {primary_log_file}.")
         return {"status": "error", "error_message": "Log file not found"}
-    except psutil.NoSuchProcess:
-        logging.error(f"BGSAVE child process with PID {child_pid} exited unexpectedly.", exc_info=True)
-        # Log a warning but continue with the data we have, if any
+    except psutil.NoSuchProcess as e:
+        # This is a key error to catch - it means the process exited too fast
+        logging.error(f"BGSAVE child process with PID {child_pid} was not found. It may have exited before profiling could begin.", exc_info=True)
+        return {"status": "error", "error_message": f"Process not found: {e}"}
     except Exception as e:
         logging.error(f"An error occurred while profiling the child process: {e}", exc_info=True)
         return {"status": "error", "error_message": str(e)}
@@ -104,7 +128,6 @@ def profile_primary_bgsave(
         logging.error("BGSAVE process duration could not be determined.")
         return {"status": "error", "error_message": "BGSAVE duration not found"}
     
-    # Calculate deltas and return results
     cpu_time_seconds = (cpu_after.user - cpu_before.user) + (cpu_after.system - cpu_before.system)
     io_write_bytes = io_after.write_bytes - io_before.write_bytes
     throughput_mb_s = (io_write_bytes / bgsave_duration) * 1e-6 if bgsave_duration > 0 else 0

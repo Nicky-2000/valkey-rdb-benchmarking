@@ -55,7 +55,7 @@ def profile_primary_bgsave(
         with open(primary_log_file, "r", encoding="utf-8") as log_file:
             log_file.seek(0, 2)
             timeout_start = time.monotonic()
-            while child_pid is None and time.monotonic() - timeout_start < 30: # Add a timeout
+            while child_pid is None and time.monotonic() - timeout_start < 3600: # Add a timeout
                 line = log_file.readline()
                 if not line:
                     time.sleep(0.1)

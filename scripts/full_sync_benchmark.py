@@ -1,3 +1,4 @@
+import psutil
 import logging
 from pathlib import Path
 import time
@@ -10,6 +11,8 @@ from utilities.parse_args import (
     parse_benchmark_args,
     display_config,
     setup_logging,
+    colorize,
+    LOG_COLORS,
     BenchmarkConfig,
 )
 from utilities.file_system_utilities import (
@@ -22,11 +25,8 @@ from utilities.valkey_server_utilities import (
     stop_valkey_server,
     wait_for_server_to_start,
 )
-from utilities.populate_server import populate_data_standalone, populate_data_with_benchmark, KEY_SIZE_BYTES
-from utilities.valkey_commands import get_db_key_count, profile_blocking_save
-
-# --- New Imports for Full Sync Benchmark ---
-from concurrent.futures import ThreadPoolExecutor
+from utilities.populate_server import populate_data_standalone
+from utilities.valkey_commands import get_db_key_count
 
 # Define default ports for primary and replica
 PRIMARY_PORT_DEFAULT = 7000
@@ -92,15 +92,6 @@ def run_valkey_benchmark_get(
     return process
 
 
-import logging
-import time
-import subprocess
-import valkey
-from pathlib import Path
-
-# Assume get_db_key_count is an existing function
-
-
 def monitor_full_sync_via_logs(replica_log_path: Path, timeout_seconds: int = 3600):
     """
     Monitors the full synchronization process by watching the replica's log file.
@@ -153,6 +144,90 @@ def monitor_full_sync_via_logs(replica_log_path: Path, timeout_seconds: int = 36
     return None
 
 
+def profile_full_sync(
+    primary_client: valkey.Valkey,
+    primary_process: subprocess.Popen,
+    replica_client: valkey.Valkey,
+    replica_process: subprocess.Popen,
+    replica_log_file: Path
+) -> dict[str, any]:
+    """
+    Initiates a full sync and profiles system metrics (CPU, I/O) on both the
+    primary and replica servers during the synchronization process.
+
+    Args:
+        primary_client: An active valkey.Valkey client for the primary.
+        primary_process: The subprocess.Popen object for the primary server.
+        replica_client: An active valkey.Valkey client for the replica.
+        replica_process: The subprocess.Popen object for the replica server.
+        replica_log_file: The path to the replica's log file for monitoring.
+
+    Returns:
+        A dictionary containing detailed performance metrics for both servers.
+    """
+    primary_port = primary_client.connection_pool.connection_kwargs.get("port", "N/A")
+    replica_port = replica_client.connection_pool.connection_kwargs.get("port", "N/A")
+    
+    logging.info(f"Preparing to profile full sync from Primary ({primary_port}) to Replica ({replica_port})...")
+
+    try:
+        primary_proc = psutil.Process(primary_process.pid)
+        replica_proc = psutil.Process(replica_process.pid)
+
+        # --- Capture metrics before sync starts ---
+        primary_io_before = primary_proc.io_counters()
+        primary_cpu_before = primary_proc.cpu_times()
+        replica_io_before = replica_proc.io_counters()
+        replica_cpu_before = replica_proc.cpu_times()
+        
+        # --- Initiate the full sync ---
+        sync_start_time = time.monotonic()
+        replica_client.replicaof("127.0.0.1", primary_port)
+
+        # --- Monitor sync progress and get duration ---
+        sync_duration = monitor_full_sync_via_logs(replica_log_file)
+        
+        if sync_duration is None:
+            logging.error("Full sync failed or timed out during monitoring.")
+            return {"status": "error", "error_message": "Sync failed"}
+
+        sync_end_time = time.monotonic()
+        total_time = sync_end_time - sync_start_time
+
+        # --- Capture metrics after sync completes ---
+        primary_io_after = primary_proc.io_counters()
+        primary_cpu_after = primary_proc.cpu_times()
+        replica_io_after = replica_proc.io_counters()
+        replica_cpu_after = replica_proc.cpu_times()
+
+        logging.info(colorize(f"Profiled full sync finished in {total_time:.4f} seconds.", LOG_COLORS.GREEN))
+
+        # --- Calculate deltas and return results ---
+        primary_cpu_time = (primary_cpu_after.user - primary_cpu_before.user) + (primary_cpu_after.system - primary_cpu_before.system)
+        primary_io_write_bytes = primary_io_after.write_bytes - primary_io_before.write_bytes
+        primary_throughput_mb_s = (primary_io_write_bytes / total_time) * 1e-6 if total_time > 0 else 0
+
+        replica_cpu_time = (replica_cpu_after.user - replica_cpu_before.user) + (replica_cpu_after.system - replica_cpu_before.system)
+        replica_io_read_bytes = replica_io_after.read_bytes - replica_io_before.read_bytes
+        replica_throughput_mb_s = (replica_io_read_bytes / total_time) * 1e-6 if total_time > 0 else 0
+
+        return {
+            "status": "ok",
+            "sync_duration_seconds": total_time,
+            "primary_cpu_time_seconds": primary_cpu_time,
+            "primary_io_write_mb_s": primary_throughput_mb_s,
+            "replica_cpu_time_seconds": replica_cpu_time,
+            "replica_io_read_mb_s": replica_throughput_mb_s,
+        }
+
+    except psutil.NoSuchProcess:
+        logging.error("A Valkey process was not found for profiling.", exc_info=True)
+        return {"status": "error", "error_message": "Process not found"}
+    except Exception as e:
+        logging.error("An unexpected error occurred during full sync profiling.", exc_info=True)
+        return {"status": "error", "error_message": str(e)}
+
+
 def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
     """
     Runs a benchmark for Valkey full synchronization.
@@ -162,8 +237,7 @@ def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
     primary_client = None
     all_results = []
 
-    # List of thread counts to test
-    thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
+
 
     try:
         # --- 1. Initial Setup and Server Start (Primary) ---
@@ -208,7 +282,10 @@ def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
         logging.info(
             f"Primary server populated with {initial_primary_key_count:,} keys."
         )
-
+        
+        # List of thread counts to test
+        thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
+        
         # --- 3. Run Benchmark Loop for each rdb-threads setting ---
         for num_threads in thread_counts_to_test:
             replica_process = None
@@ -217,7 +294,7 @@ def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
 
             try:
                 logging.info(
-                    f"--- Starting new full sync test for rdb-threads = {num_threads} ---"
+                    colorize(f"--- Starting new full sync test for rdb-threads = {num_threads} ---", LOG_COLORS.GREEN) 
                 )
 
                 # Configure the primary server's rdb-threads for this iteration
@@ -249,23 +326,40 @@ def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
                 logging.info(
                     f"Initiating full sync: Replica ({replica_port}) REPLICAOF Primary ({PRIMARY_PORT_DEFAULT})..."
                 )
-                replica_client.replicaof("127.0.0.1", PRIMARY_PORT_DEFAULT)
+                # Use the new profiling function
+                replica_log_file = Path(replica_temp_dir) / "node_log_7001.log"
+                
+                profiling_results = profile_full_sync(
+                    primary_client=primary_client,
+                    primary_process=primary_process,
+                    replica_client=replica_client,
+                    replica_process=replica_process,
+                    replica_log_file=replica_log_file
+                )
+                if profiling_results["status"] != "ok":
+                    logging.error(colorize("Full sync profiling failed.", LOG_COLORS.RED))
+                    continue
+                
+                sync_duration = profiling_results["sync_duration_seconds"]
+                logging.info(colorize(f"Full sync completed in {sync_duration:.2f} seconds.", LOG_COLORS.GREEN))
+
+                # replica_client.replicaof("127.0.0.1", PRIMARY_PORT_DEFAULT)
 
                 # --- 6. Monitor Sync Progress via logs ---
                 # This assumes your start_standalone_valkey_server function
                 # configures the server to log to a file named 'valkey_server.log'
-                replica_log_file = Path(replica_temp_dir) / "node_log_7001.log"
-                sync_duration = monitor_full_sync_via_logs(
-                    replica_log_file,
-                )
+                # replica_log_file = Path(replica_temp_dir) / "node_log_7001.log"
+                # sync_duration = monitor_full_sync_via_logs(
+                #     replica_log_file,
+                # )
 
-                if sync_duration is None:
-                    logging.error("Full sync did not complete successfully.")
-                    continue
+                # if sync_duration is None:
+                #     logging.error("Full sync did not complete successfully.")
+                #     continue
 
-                logging.info(f"Full sync completed in {sync_duration:.2f} seconds.")
+                # logging.info(colorize(f"Full sync completed in {sync_duration:.2f} seconds.", LOG_COLORS.GREEN))
 
-                # --- 7. Verify Replica Key Count ---
+                # --- 6. Verify Replica Key Count ---
                 final_replica_key_count = get_db_key_count(replica_config)
                 if final_replica_key_count != num_keys_expected:
                     logging.error(
@@ -275,20 +369,17 @@ def full_sync_benchmark(config: BenchmarkConfig, output_dir: Path):
                 logging.info(
                     f"Replica successfully synced with {final_replica_key_count:,} keys."
                 )
-
-                # --- 8. Collect Results ---
-                all_results.append(
-                    {
-                        "test_type": "full_sync",
-                        "rdb_threads": num_threads,
-                        "num_keys_millions": config.num_keys_millions,
-                        "value_size_bytes": config.value_size_bytes,
-                        "sync_duration_seconds": sync_duration,
-                        "primary_port": PRIMARY_PORT_DEFAULT,
-                        "replica_port": replica_port,
-                        "status": "success",
-                    }
-                )
+                # --- 7. Collect and Aggregate Results ---
+                all_results.append({
+                    "test_type": "full_sync",
+                    "rdb_threads": num_threads,
+                    "num_keys_millions": config.num_keys_millions,
+                    "value_size_bytes": config.value_size_bytes,
+                    "primary_port": PRIMARY_PORT_DEFAULT,
+                    "replica_port": replica_port,
+                    **profiling_results, # Unpack the profiling data directly into the results dictionary
+                })
+                
             except Exception as e:
                 logging.critical(
                     f"An unhandled exception occurred during iteration for rdb-threads={num_threads}.",

@@ -29,7 +29,7 @@ from utilities.valkey_server_utilities import (
 from utilities.valkey_commands import get_db_key_count
 
 
-PRIMARY_IP = "10.128.0.8"  # <<-- IMPORTANT: Use the IP of your primary VM
+PRIMARY_IP = "10.128.0.8"
 PRIMARY_PORT_DEFAULT = 7000
 REPLICA_PORT_DEFAULT = 7001
 
@@ -74,15 +74,10 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
     all_results = []
     
     try:
-        logging.info(f"Attempting to create client for primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}...")
         primary_client = valkey.Valkey(host=PRIMARY_IP, port=PRIMARY_PORT_DEFAULT)
-        # Add a log message to confirm success
-        logging.info("Primary client successfully created. Now checking key count...")
         num_keys_expected = get_db_key_count(primary_client)
     except Exception as e:
-        logging.error(f"Failed to connect to primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}.", exc_info=True)
-        # This log message will tell you if the connection failed before even checking the key count.
-        logging.error(f"Reason for connection failure: {type(e).__name__} - {e}")
+        logging.error(f"Could not connect to primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}. Is it running and populated?", exc_info=True)
         return None
 
     thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10, 15, 20, 25, 30]
@@ -92,10 +87,8 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
         replica_client = None
 
         try:
-            # ... (rest of the code for the loop remains the same)
             logging.info(colorize(f"--- Starting new full sync test for rdb-threads = {num_threads} ---", LOG_COLORS.GREEN))
             
-            # Start a fresh Replica Server for this test
             replica_temp_dir = Path(config.temp_dir) / f"replica_data_{REPLICA_PORT_DEFAULT}_threads_{num_threads}"
             setup_directory_for_run(str(replica_temp_dir))
             
@@ -110,13 +103,12 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
             if not replica_client:
                 continue
 
-            # Capture metrics before sync starts
+            # --- Simplified: Measure once before and after sync ---
             replica_proc = psutil.Process(replica_process.pid)
-            replica_io_before = replica_proc.io_counters()
-            replica_cpu_before = replica_proc.cpu_times()
+            start_time = time.monotonic()
+            cpu_before = replica_proc.cpu_times()
+            net_before = psutil.net_io_counters()
 
-            # Initiate Full Sync
-            sync_start_time = time.monotonic()
             logging.info(f"Initiating full sync to primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}")
             replica_client.replicaof(PRIMARY_IP, PRIMARY_PORT_DEFAULT)
             
@@ -130,9 +122,9 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
 
             # Capture metrics after sync completes
             sync_end_time = time.monotonic()
-            total_time = sync_end_time - sync_start_time
-            replica_io_after = replica_proc.io_counters()
-            replica_cpu_after = replica_proc.cpu_times()
+            total_time = sync_end_time - start_time
+            cpu_after = replica_proc.cpu_times()
+            net_after = psutil.net_io_counters()
 
             # Verify Replica Key Count
             final_replica_key_count = get_db_key_count(replica_client)
@@ -142,9 +134,9 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
             logging.info(f"Replica successfully synced with {final_replica_key_count:,} keys.")
             
             # Calculate deltas and collect results
-            replica_cpu_time = (replica_cpu_after.user - replica_cpu_before.user) + (replica_cpu_after.system - replica_cpu_before.system)
-            replica_io_read_bytes = replica_io_after.read_bytes - replica_io_before.read_bytes
-            replica_throughput_mb_s = (replica_io_read_bytes / total_time) * 1e-6 if total_time > 0 else 0
+            replica_cpu_time = (cpu_after.user - cpu_before.user) + (cpu_after.system - cpu_before.system)
+            replica_net_read_bytes = net_after.bytes_recv - net_before.bytes_recv
+            replica_throughput_mb_s = (replica_net_read_bytes / total_time) * 1e-6 if total_time > 0 else 0
             
             all_results.append({
                 "test_type": "replica_full_sync",
@@ -156,7 +148,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
                 "replica_ip": "10.128.0.9",
                 "replica_port": REPLICA_PORT_DEFAULT,
                 "replica_cpu_time_seconds": replica_cpu_time,
-                "replica_io_read_mb_s": replica_throughput_mb_s,
+                "replica_net_read_mb_s": replica_throughput_mb_s,
                 "status": "success",
             })
             

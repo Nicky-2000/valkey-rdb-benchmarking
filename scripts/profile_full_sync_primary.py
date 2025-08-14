@@ -6,6 +6,8 @@ import valkey
 import os
 import psutil
 from typing import Dict, Any
+import re 
+
 
 # --- Local Utility Imports ---
 from utilities.parse_args import (
@@ -33,35 +35,12 @@ from utilities.valkey_commands import get_db_key_count
 PRIMARY_PORT_DEFAULT = 7000
 
 
-import logging
-from pathlib import Path
-import time
-import subprocess
-import psutil
-import re  # Import the regex module
-from typing import Dict, Any
 
-
-import logging
-from pathlib import Path
-import time
-import subprocess
-import psutil
-import re
-from typing import Dict, Any
-
-import logging
-from pathlib import Path
-import time
-import subprocess
-import psutil
-import re
-from typing import Dict, Any
 
 def profile_primary_bgsave(
     primary_process: subprocess.Popen,
     primary_log_file: Path
-) -> Dict[str, Any]:
+) -> dict[str, any]:
     """
     Monitors the primary's log file for the child process PID and continuously
     profiles its system metrics during the diskless RDB transfer.
@@ -97,20 +76,20 @@ def profile_primary_bgsave(
         child_proc = psutil.Process(child_pid)
         start_time = time.monotonic()
         
-        # Get initial metrics
-        io_before = child_proc.io_counters()
+        # Get initial metrics (CPU from the child, but network is system-wide)
         cpu_before = child_proc.cpu_times()
+        net_before = psutil.net_io_counters()
         
         logging.info("Initial metrics retrieved. Starting continuous monitoring...")
         
-        last_io = io_before
+        last_net = net_before
         last_cpu = cpu_before
 
         # Poll the process status and metrics in a loop until it exits
         while child_proc.is_running():
             try:
                 # Update metrics on each loop to get the final values
-                last_io = child_proc.io_counters()
+                last_net = psutil.net_io_counters()
                 last_cpu = child_proc.cpu_times()
             except psutil.NoSuchProcess:
                 # The process just exited, so the last captured metrics are the final ones
@@ -122,7 +101,7 @@ def profile_primary_bgsave(
         
         logging.info(colorize(f"BGSAVE child process has exited. Time: {bgsave_duration:.2f}. Using final metrics...", LOG_COLORS.GREEN))
 
-        io_after = last_io
+        net_after = last_net
         cpu_after = last_cpu
 
     except FileNotFoundError:
@@ -140,14 +119,14 @@ def profile_primary_bgsave(
         return {"status": "error", "error_message": "BGSAVE duration not found"}
     
     cpu_time_seconds = (cpu_after.user - cpu_before.user) + (cpu_after.system - cpu_before.system)
-    io_write_bytes = io_after.write_bytes - io_before.write_bytes
-    throughput_mb_s = (io_write_bytes / bgsave_duration) * 1e-6 if bgsave_duration > 0 else 0
+    net_write_bytes = net_after.bytes_sent - net_before.bytes_sent
+    throughput_mb_s = (net_write_bytes / bgsave_duration) * 1e-6 if bgsave_duration > 0 else 0
 
     return {
         "status": "ok",
         "bgsave_duration_seconds": bgsave_duration,
         "primary_cpu_time_seconds": cpu_time_seconds,
-        "primary_io_write_mb_s": throughput_mb_s,
+        "primary_net_write_mb_s": throughput_mb_s,
     }
 
 

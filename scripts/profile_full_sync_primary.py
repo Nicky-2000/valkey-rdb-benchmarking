@@ -62,6 +62,7 @@ def profile_primary_bgsave(
     
     child_pid = None
     
+    logging.info(primary_log_file)
     try:
         # --- 1. Find the PID of the child process from the log ---
         logging.info("Tailing log file to find BGSAVE child PID...")

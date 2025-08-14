@@ -200,7 +200,7 @@ def main():
         logging.info(f"Benchmark finished. Collected {len(results)} results.")
 
         csv_file_name = (
-            f"save_summary_{config.num_keys_millions}keys_{config.value_size_bytes}B"
+            f"save_summary_workload_{config.workload_type.value}_{config.num_keys_millions}keys_{config.value_size_bytes}B"
             f"_comp-{config.rdb_compression}_csum-{config.rdb_checksum}.csv"
         )
 

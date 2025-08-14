@@ -46,6 +46,9 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
         config.rdb_checksum,
         "--dbfilename",
         "dump.rdb",
+        "--bind", "0.0.0.0",
+        "--protected-mode", "no",
+        "--repl-diskless-sync", "yes",
     ]
 
     # Dynamically add the --loadmodule argument if a path is provided in the config

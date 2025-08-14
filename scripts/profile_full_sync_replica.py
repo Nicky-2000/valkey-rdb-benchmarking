@@ -101,7 +101,6 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
             replica_config = BenchmarkConfig(**config.__dict__)
             replica_config.start_port = REPLICA_PORT_DEFAULT
             replica_config.temp_dir = str(replica_temp_dir)
-            replica_config.bind = "0.0.0.0"
             
             replica_process = start_standalone_valkey_server(replica_config)
             if not replica_process:

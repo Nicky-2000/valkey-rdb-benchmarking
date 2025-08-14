@@ -108,8 +108,6 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
         primary_config = BenchmarkConfig(**config.__dict__)
         primary_config.start_port = PRIMARY_PORT_DEFAULT
         primary_config.temp_dir = str(primary_temp_dir)
-        primary_config.repl_diskless_sync = True
-        primary_config.bind = "0.0.0.0"
         
         primary_process = start_standalone_valkey_server(primary_config)
         if not primary_process:

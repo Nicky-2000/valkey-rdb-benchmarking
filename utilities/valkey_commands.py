@@ -6,41 +6,23 @@ import valkey
 from utilities.parse_args import LOG_COLORS, BenchmarkConfig, colorize
 from utilities.key_value_generation_utilities import make_deterministic_val 
 
-def get_db_key_count(config: BenchmarkConfig) -> int:
+def get_db_key_count(client: valkey.Valkey) -> int:
     """
-    Connects to a Valkey instance and returns the number of keys in the database.
-
+    Returns the number of keys in the currently selected database of a Valkey instance.
+    
     Args:
-        config: The BenchmarkConfig object with connection details.
-
+        client: An active Valkey client connection.
+    
     Returns:
         The number of keys as an integer, or 0 if an error occurs.
     """
-    client = None
     try:
-        # Establish a connection to the Valkey server
-        client = valkey.Valkey(host="127.0.0.1", port=config.start_port, decode_responses=True)
-        
-        #  Get the number of keys
         db_size = client.dbsize()
-        logging.info(f"Successfully retrieved DBSIZE from port {config.start_port}. Key count: {db_size}")
+        logging.info(f"Successfully retrieved DBSIZE. Key count: {db_size}")
         return db_size
-        
-    except valkey.exceptions.ConnectionError as e:
-        # Log a specific error if the connection fails
-        logging.error(f"Could not connect to Valkey on port {config.start_port} to get DB size.", exc_info=True)
-        
     except Exception as e:
-        # Log any other unexpected errors during the process
-        logging.error(f"An unexpected error occurred while getting DB size on port {config.start_port}.", exc_info=True)
-        
-    finally:
-        # Ensure the connection is always closed to prevent resource leaks
-        if client:
-            client.connection_pool.disconnect()
-            logging.debug("Valkey client connection closed.")
-            
-    return 0
+        logging.error("An error occurred while getting DB size.", exc_info=True)
+        return 0
 
 def trigger_blocking_save(client: valkey.Valkey) -> dict:
     """

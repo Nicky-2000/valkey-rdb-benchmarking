@@ -33,55 +33,78 @@ from utilities.valkey_commands import get_db_key_count
 PRIMARY_PORT_DEFAULT = 7000
 
 
+import logging
+from pathlib import Path
+import time
+import subprocess
+import psutil
+import re  # Import the regex module
+from typing import Dict, Any
+
+
 def profile_primary_bgsave(
     primary_process: subprocess.Popen,
     primary_log_file: Path
 ) -> Dict[str, Any]:
     """
-    Monitors the primary's log file for BGSAVE start and end markers and
-    profiles system metrics during that period.
+    Monitors the primary's log file for the child process PID and profiles its
+    system metrics during the diskless RDB transfer.
     """
-    logging.info(f"Monitoring primary log file at {primary_log_file} for BGSAVE.")
+    logging.info(f"Monitoring primary log file at {primary_log_file} for BGSAVE child process.")
     
-    primary_proc = psutil.Process(primary_process.pid)
-    
-    start_time = None
-    bgsave_duration = None
+    child_pid = None
     
     try:
+        # --- 1. Find the PID of the child process from the log ---
         with open(primary_log_file, "r", encoding="utf-8") as log_file:
-            log_file.seek(0, 2)
-            while True:
+            log_file.seek(0, 2)  # Go to the end
+            while child_pid is None:
                 line = log_file.readline()
                 if not line:
                     time.sleep(0.1)
                     continue
 
-                if start_time is None and "Starting BGSAVE" in line:
-                    start_time = time.monotonic()
-                    logging.info(colorize("Detected 'Starting BGSAVE' in primary log. Starting profiling.", LOG_COLORS.GREEN))
-                    io_before = primary_proc.io_counters()
-                    cpu_before = primary_proc.cpu_times()
-                    continue
-
-                if start_time is not None and "Ending BGSAVE" in line:
-                    bgsave_duration = time.monotonic() - start_time
-                    logging.info(colorize("Detected 'Ending BGSAVE' in primary log. Stopping profiling.", LOG_COLORS.GREEN))
-                    io_after = primary_proc.io_counters()
-                    cpu_after = primary_proc.cpu_times()
+                # Use a regular expression to find the PID
+                # The pattern looks for "started by pid <number> to pipe"
+                match = re.search(r'started by pid (\d+) to pipe', line)
+                if match:
+                    child_pid = int(match.group(1))
+                    logging.info(colorize(f"Detected BGSAVE child process with PID: {child_pid}. Starting profiling.", LOG_COLORS.GREEN))
                     break
-    
+        
+        if child_pid is None:
+            logging.error("Failed to find BGSAVE child PID in log.")
+            return {"status": "error", "error_message": "Child PID not found"}
+
+        child_proc = psutil.Process(child_pid)
+        
+        # --- 2. Profile the child process ---
+        start_time = time.monotonic()
+        io_before = child_proc.io_counters()
+        cpu_before = child_proc.cpu_times()
+        
+        # Wait for the child process to exit
+        child_proc.wait()
+        
+        bgsave_duration = time.monotonic() - start_time
+        io_after = child_proc.io_counters()
+        cpu_after = child_proc.cpu_times()
+
     except FileNotFoundError:
         logging.error(f"Primary log file not found at {primary_log_file}.")
         return {"status": "error", "error_message": "Log file not found"}
+    except psutil.NoSuchProcess:
+        logging.error(f"BGSAVE child process with PID {child_pid} exited unexpectedly.", exc_info=True)
+        # Log a warning but continue with the data we have, if any
     except Exception as e:
-        logging.error(f"An error occurred while reading the primary log: {e}", exc_info=True)
+        logging.error(f"An error occurred while profiling the child process: {e}", exc_info=True)
         return {"status": "error", "error_message": str(e)}
 
     if bgsave_duration is None:
-        logging.error("BGSAVE start or end log line not found within timeout.")
-        return {"status": "error", "error_message": "BGSAVE markers not found"}
-        
+        logging.error("BGSAVE process duration could not be determined.")
+        return {"status": "error", "error_message": "BGSAVE duration not found"}
+    
+    # Calculate deltas and return results
     cpu_time_seconds = (cpu_after.user - cpu_before.user) + (cpu_after.system - cpu_before.system)
     io_write_bytes = io_after.write_bytes - io_before.write_bytes
     throughput_mb_s = (io_write_bytes / bgsave_duration) * 1e-6 if bgsave_duration > 0 else 0

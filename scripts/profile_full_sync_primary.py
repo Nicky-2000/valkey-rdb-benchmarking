@@ -145,7 +145,7 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
     primary_process = None
     primary_client = None
     all_results = []
-    thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
+    thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10, 15, 20, 25, 30]
 
     try:
         # --- 1. Initial Setup and Server Start (Primary) - **Run once** ---

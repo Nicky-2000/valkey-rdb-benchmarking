@@ -85,7 +85,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
         logging.error(f"Reason for connection failure: {type(e).__name__} - {e}")
         return None
 
-    thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
+    thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10, 15, 20, 25, 30]
 
     for num_threads in thread_counts_to_test:
         replica_process = None

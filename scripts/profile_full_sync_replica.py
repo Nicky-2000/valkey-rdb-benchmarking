@@ -26,7 +26,6 @@ from utilities.valkey_server_utilities import (
     stop_valkey_server,
     wait_for_server_to_start,
 )
-from utilities.populate_server import KEY_SIZE_BYTES
 from utilities.valkey_commands import get_db_key_count
 
 
@@ -70,19 +69,21 @@ def monitor_full_sync_via_logs(replica_log_path: Path, timeout_seconds: int = 36
     logging.error(f"Full sync timed out after {timeout_seconds} seconds.")
     return None
 
-
 def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
     all_results = []
     
     try:
-        # Get the expected key count from the primary for verification
+        logging.info(f"Attempting to create client for primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}...")
         primary_client = valkey.Valkey(host=PRIMARY_IP, port=PRIMARY_PORT_DEFAULT)
+        # Add a log message to confirm success
+        logging.info("Primary client successfully created. Now checking key count...")
         num_keys_expected = get_db_key_count(primary_client)
     except Exception as e:
-        logging.error(f"Could not connect to primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}. Is it running and populated?", exc_info=True)
+        logging.error(f"Failed to connect to primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}.", exc_info=True)
+        # This log message will tell you if the connection failed before even checking the key count.
+        logging.error(f"Reason for connection failure: {type(e).__name__} - {e}")
         return None
 
-    logging.info(colorize(f"Found Primary with {num_keys_expected} keys", LOG_COLORS.GREEN))
     thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
 
     for num_threads in thread_counts_to_test:
@@ -90,6 +91,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
         replica_client = None
 
         try:
+            # ... (rest of the code for the loop remains the same)
             logging.info(colorize(f"--- Starting new full sync test for rdb-threads = {num_threads} ---", LOG_COLORS.GREEN))
             
             # Start a fresh Replica Server for this test
@@ -133,7 +135,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
             replica_cpu_after = replica_proc.cpu_times()
 
             # Verify Replica Key Count
-            final_replica_key_count = get_db_key_count(replica_config)
+            final_replica_key_count = get_db_key_count(replica_client)
             if final_replica_key_count != num_keys_expected:
                 logging.error(f"Replica key count mismatch: Expected {num_keys_expected:,} keys but DB has {final_replica_key_count:,}.")
                 continue
@@ -151,7 +153,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
                 "value_size_bytes": config.value_size_bytes,
                 "sync_duration_seconds": total_time,
                 "primary_ip": PRIMARY_IP,
-                "replica_ip": "10.128.0.9", # Or get it programmatically
+                "replica_ip": "10.128.0.9",
                 "replica_port": REPLICA_PORT_DEFAULT,
                 "replica_cpu_time_seconds": replica_cpu_time,
                 "replica_io_read_mb_s": replica_throughput_mb_s,
@@ -166,7 +168,6 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
                 stop_valkey_server(replica_process, replica_client)
     
     return all_results
-
 
 def main():
     config = parse_benchmark_args()

@@ -171,7 +171,7 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
                 continue
                 
             # Wait for a brief period to allow the replica to finish
-            time.sleep(10)
+            time.sleep(5)
             # You can add a check here to ensure the replica is disconnected
             # primary_client.replicaof("NO ONE") can be used to reset the primary's replication state
 

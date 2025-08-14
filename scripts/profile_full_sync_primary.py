@@ -26,7 +26,7 @@ from utilities.valkey_server_utilities import (
     stop_valkey_server,
     wait_for_server_to_start,
 )
-from utilities.populate_server import populate_data_standalone, KEY_SIZE_BYTES
+from utilities.populate_server import populate_data_standalone
 from utilities.valkey_commands import get_db_key_count
 
 
@@ -39,13 +39,6 @@ def profile_primary_bgsave(
     """
     Monitors the primary's log file for BGSAVE start and end markers and
     profiles system metrics during that period.
-
-    Args:
-        primary_process: The subprocess.Popen object for the primary server.
-        primary_log_file: The path to the primary's log file.
-
-    Returns:
-        A dictionary containing BGSAVE duration and performance metrics.
     """
     logging.info(f"Monitoring primary log file at {primary_log_file} for BGSAVE.")
     
@@ -55,10 +48,8 @@ def profile_primary_bgsave(
     bgsave_duration = None
     
     try:
-        # Tailing the log file to find start and end markers
         with open(primary_log_file, "r", encoding="utf-8") as log_file:
-            log_file.seek(0, 2) # Go to the end of the file
-
+            log_file.seek(0, 2)
             while True:
                 line = log_file.readline()
                 if not line:
@@ -68,7 +59,6 @@ def profile_primary_bgsave(
                 if start_time is None and "Starting BGSAVE" in line:
                     start_time = time.monotonic()
                     logging.info(colorize("Detected 'Starting BGSAVE' in primary log. Starting profiling.", LOG_COLORS.GREEN))
-                    # Capture metrics just after BGSAVE starts
                     io_before = primary_proc.io_counters()
                     cpu_before = primary_proc.cpu_times()
                     continue
@@ -76,10 +66,9 @@ def profile_primary_bgsave(
                 if start_time is not None and "Ending BGSAVE" in line:
                     bgsave_duration = time.monotonic() - start_time
                     logging.info(colorize("Detected 'Ending BGSAVE' in primary log. Stopping profiling.", LOG_COLORS.GREEN))
-                    # Capture metrics just before BGSAVE ends
                     io_after = primary_proc.io_counters()
                     cpu_after = primary_proc.cpu_times()
-                    break # Exit the while loop
+                    break
     
     except FileNotFoundError:
         logging.error(f"Primary log file not found at {primary_log_file}.")
@@ -88,7 +77,6 @@ def profile_primary_bgsave(
         logging.error(f"An error occurred while reading the primary log: {e}", exc_info=True)
         return {"status": "error", "error_message": str(e)}
 
-    # Calculate deltas and return results
     if bgsave_duration is None:
         logging.error("BGSAVE start or end log line not found within timeout.")
         return {"status": "error", "error_message": "BGSAVE markers not found"}
@@ -104,14 +92,14 @@ def profile_primary_bgsave(
         "primary_io_write_mb_s": throughput_mb_s,
     }
 
-
 def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
     primary_process = None
     primary_client = None
     all_results = []
-    
+    thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10]
+
     try:
-        # --- 1. Initial Setup and Server Start (Primary) ---
+        # --- 1. Initial Setup and Server Start (Primary) - **Run once** ---
         primary_temp_dir = Path(config.temp_dir) / f"primary_data_{PRIMARY_PORT_DEFAULT}"
         setup_directory_for_run(str(primary_temp_dir))
         
@@ -121,10 +109,8 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
         primary_config.start_port = PRIMARY_PORT_DEFAULT
         primary_config.temp_dir = str(primary_temp_dir)
         primary_config.repl_diskless_sync = True
-        
-        # We need to bind to the public IP or 0.0.0.0 for the replica to connect.
         primary_config.bind = "0.0.0.0"
-
+        
         primary_process = start_standalone_valkey_server(primary_config)
         if not primary_process:
             return None
@@ -132,53 +118,62 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
         if not primary_client:
             return None
         logging.info("Primary Valkey server started.")
-
-        # --- 2. Populate Data on Primary ---
+        
+        # --- 2. Populate Data on Primary - **Run once** ---
         logging.info(f"Populating {config.num_keys_millions}M keys on Primary server...")
         populate_data_standalone(config, return_keys=False)
         num_keys_expected = primary_config.num_keys_millions * 1e6
         initial_primary_key_count = get_db_key_count(primary_config)
-
+        
         if initial_primary_key_count != num_keys_expected:
             logging.error(f"Primary key population mismatch: Expected {num_keys_expected:,} keys but DB has {initial_primary_key_count:,}.")
             return None
         logging.info(f"Primary server populated with {initial_primary_key_count:,} keys.")
         
-        # --- 3. Wait for and profile the BGSAVE triggered by a replica ---
-        logging.info("Primary is ready. Waiting for a replica to connect and trigger a full sync...")
-        primary_log_file = Path(primary_config.temp_dir) / f"node_log_{PRIMARY_PORT_DEFAULT}.log"
-        
-        # The BGSAVE will not start immediately. We need a way to detect the sync has been requested.
-        # A simple check on the replication info is a good proxy.
-        start_wait_time = time.monotonic()
-        while time.monotonic() - start_wait_time < 3600: # Wait up to 1 hour
-            info = primary_client.info('replication')
-            # The 'master_sync_in_progress' is for old Redis versions.
-            # 'loading' is more modern and indicates a diskless sync.
-            if info.get('loading') == '1' or info.get('master_sync_in_progress') == '1':
-                logging.info(colorize("Detected a full sync request from a replica.", LOG_COLORS.GREEN))
-                break
-            time.sleep(1)
-        else:
-            logging.error("Timeout: No replica connected within the allowed time. Aborting benchmark.")
-            return None
+        # --- 3. Loop through thread counts and wait for syncs ---
+        for num_threads in thread_counts_to_test:
+            logging.info(colorize(f"--- Primary ready for test with rdb-threads = {num_threads} ---", LOG_COLORS.CYAN))
             
-        # Call the profiling function to measure the BGSAVE part specifically
-        profiling_results = profile_primary_bgsave(primary_process, primary_log_file)
-
-        if profiling_results['status'] == 'ok':
-            all_results.append({
-                "test_type": "primary_bgsave",
-                "rdb_threads": primary_client.config_get('rdb-threads').get('rdb-threads'),
-                "num_keys_millions": config.num_keys_millions,
-                "value_size_bytes": config.value_size_bytes,
-                "primary_port": PRIMARY_PORT_DEFAULT,
-                **profiling_results,
-            })
-            logging.info("Primary BGSAVE profiling complete.")
-        else:
-            logging.error("Primary BGSAVE profiling failed.")
-            return None
+            # Use CONFIG SET to change the thread count without restarting
+            primary_client.config_set("rdb-threads", num_threads)
+            
+            logging.info(colorize(f"Waiting for replica to connect and trigger a full sync...", LOG_COLORS.CYAN))
+            
+            primary_log_file = Path(primary_config.temp_dir) / f"node_log_{PRIMARY_PORT_DEFAULT}.log"
+            start_wait_time = time.monotonic()
+            
+            # Wait for replica to connect
+            while time.monotonic() - start_wait_time < 3600:
+                info = primary_client.info('replication')
+                if info.get('loading') == '1' or info.get('master_sync_in_progress') == '1':
+                    logging.info(colorize("Detected a full sync request from a replica.", LOG_COLORS.GREEN))
+                    break
+                time.sleep(1)
+            else:
+                logging.error("Timeout: No replica connected within the allowed time. Aborting this test.")
+                continue
+                
+            # Profile the BGSAVE that was triggered by the replica
+            profiling_results = profile_primary_bgsave(primary_process, primary_log_file)
+            
+            if profiling_results['status'] == 'ok':
+                all_results.append({
+                    "test_type": "primary_bgsave",
+                    "rdb_threads": num_threads,
+                    "num_keys_millions": config.num_keys_millions,
+                    "value_size_bytes": config.value_size_bytes,
+                    "primary_port": PRIMARY_PORT_DEFAULT,
+                    **profiling_results,
+                })
+                logging.info(colorize("Primary BGSAVE profiling complete.", LOG_COLORS.GREEN))
+            else:
+                logging.error("Primary BGSAVE profiling failed.")
+                continue
+                
+            # Wait for a brief period to allow the replica to finish
+            time.sleep(10)
+            # You can add a check here to ensure the replica is disconnected
+            # primary_client.replicaof("NO ONE") can be used to reset the primary's replication state
 
         return all_results
 
@@ -186,7 +181,7 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
         logging.critical("An unhandled exception occurred during the primary benchmark.", exc_info=True)
         return None
     finally:
-        # --- Final Cleanup of Primary ---
+        # --- Final Cleanup of Primary - **Run once** ---
         if primary_process:
             logging.info("--- Final cleanup: Stopping Primary Valkey server. ---")
             stop_valkey_server(primary_process, primary_client)

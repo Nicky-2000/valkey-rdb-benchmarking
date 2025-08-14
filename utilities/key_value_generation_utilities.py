@@ -156,7 +156,7 @@ def generate_heavy_product_data() -> dict[str, any]:
     # Generate the base product information
     product_data = {
         "product_id": fake.uuid4(),
-        "sku": f"SKU-{fake.unique.random_int(10000, 99999)}",
+        "sku": f"SKU-{fake.unique.random_int(10000, 2_000_000)}",
         "name": fake.catch_phrase(),
         "description": fake.paragraph(nb_sentences=5),
         "category": random.sample(["electronics", "clothing", "home_goods", "books", "toys", "groceries", "sports"], k=random.randint(1, 3)),

@@ -61,7 +61,7 @@ def profile_primary_bgsave(
     logging.info(f"Monitoring primary log file at {primary_log_file} for BGSAVE child process.")
     
     child_pid = None
-    
+    logging.info("PRIMARY LOG FILE: ")
     logging.info(primary_log_file)
     try:
         # --- 1. Find the PID of the child process from the log ---
@@ -187,18 +187,18 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
             logging.info(colorize(f"Waiting for replica to connect and trigger a full sync...", LOG_COLORS.CYAN))
             
             primary_log_file = Path(primary_config.temp_dir) / f"node_log_{PRIMARY_PORT_DEFAULT}.log"
-            start_wait_time = time.monotonic()
+            # start_wait_time = time.monotonic()
             
             # Wait for replica to connect
-            while time.monotonic() - start_wait_time < 3600:
-                info = primary_client.info('replication')
-                if info.get('loading') == '1' or info.get('master_sync_in_progress') == '1':
-                    logging.info(colorize("Detected a full sync request from a replica.", LOG_COLORS.GREEN))
-                    break
-                time.sleep(1)
-            else:
-                logging.error("Timeout: No replica connected within the allowed time. Aborting this test.")
-                continue
+            # while time.monotonic() - start_wait_time < 3600:
+            #     info = primary_client.info('replication')
+            #     if info.get('loading') == '1' or info.get('master_sync_in_progress') == '1':
+            #         logging.info(colorize("Detected a full sync request from a replica.", LOG_COLORS.GREEN))
+            #         break
+            #     time.sleep(1)
+            # else:
+            #     logging.error("Timeout: No replica connected within the allowed time. Aborting this test.")
+            #     continue
                 
             # Profile the BGSAVE that was triggered by the replica
             profiling_results = profile_primary_bgsave(primary_process, primary_log_file)

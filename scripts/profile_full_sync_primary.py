@@ -72,7 +72,7 @@ def profile_primary_bgsave(
                 if not line:
                     time.sleep(0.1)
                     continue
-                match = re.search(r'started by pid (\d+) to pipe', line)
+                match = re.search(r'Background RDB transfer started by pid', line)
                 if match:
                     child_pid = int(match.group(1))
                     logging.info(colorize(f"Detected BGSAVE child process with PID: {child_pid}.", LOG_COLORS.GREEN))

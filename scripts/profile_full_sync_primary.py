@@ -121,10 +121,14 @@ def profile_primary_bgsave(
             perf_process.terminate()
             perf_process.wait(timeout=10)
         
+        # Corrected perf report command to use output redirection
         perf_report_file = output_dir / f"perf_report_threads_{num_threads}_pid_{child_pid}.txt"
-        perf_report_command = ['sudo', 'perf', 'report', '--header', '--no-demangle', '-i', str(perf_output_file), '-o', str(perf_report_file)]
-        logging.info(f"Generating perf report: {' '.join(perf_report_command)}")
-        subprocess.run(perf_report_command, check=True)
+        perf_report_command = ['sudo', 'perf', 'report', '-i', str(perf_output_file)]
+        logging.info(f"Generating perf report to file: {perf_report_file}")
+        
+        with open(perf_report_file, 'w') as f:
+            subprocess.run(perf_report_command, stdout=f, check=True)
+            
         
         cpu_after = last_cpu
         net_after = last_net

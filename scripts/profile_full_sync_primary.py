@@ -217,7 +217,7 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
             #     continue
                 
             # Profile the BGSAVE that was triggered by the replica
-            profiling_results = profile_primary_bgsave(primary_process, primary_log_file)
+            profiling_results = profile_primary_bgsave(primary_process, primary_log_file, Path(primary_config.temp_dir), num_threads)
             
             if profiling_results['status'] == 'ok':
                 all_results.append({

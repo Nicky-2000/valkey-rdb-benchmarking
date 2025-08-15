@@ -48,7 +48,7 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
         "dump.rdb",
         "--bind", "0.0.0.0",
         "--protected-mode", "no",
-        "--repl-diskless-sync", "yes",
+        "--repl-diskless-sync", "swapdb",
     ]
 
     # Dynamically add the --loadmodule argument if a path is provided in the config

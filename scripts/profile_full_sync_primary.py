@@ -37,17 +37,29 @@ PRIMARY_PORT_DEFAULT = 7000
 
 
 
+import logging
+from pathlib import Path
+import time
+import subprocess
+import psutil
+import re
+import os
+from typing import Dict, Any
+
 def profile_primary_bgsave(
     primary_process: subprocess.Popen,
-    primary_log_file: Path
-) -> dict[str, any]:
+    primary_log_file: Path,
+    output_dir: Path,
+    num_threads: int
+) -> Dict[str, Any]:
     """
-    Monitors the primary's log file for the child process PID and continuously
-    profiles its system metrics during the diskless RDB transfer.
+    Monitors the primary's log file for the child process PID, starts perf,
+    and continuously profiles its system metrics during the diskless RDB transfer.
     """
     logging.info(f"Monitoring primary log file at {primary_log_file} for BGSAVE child process.")
     
     child_pid = None
+    perf_process = None
     
     try:
         # --- 1. Find the PID of the child process from the log ---
@@ -55,7 +67,7 @@ def profile_primary_bgsave(
         with open(primary_log_file, "r", encoding="utf-8") as log_file:
             log_file.seek(0, 2)
             timeout_start = time.monotonic()
-            while child_pid is None and time.monotonic() - timeout_start < 3600: # Add a timeout
+            while child_pid is None and time.monotonic() - timeout_start < 60:
                 line = log_file.readline()
                 if not line:
                     time.sleep(0.1)
@@ -69,50 +81,66 @@ def profile_primary_bgsave(
         if child_pid is None:
             logging.error("Failed to find BGSAVE child PID in log within timeout.")
             return {"status": "error", "error_message": "Child PID not found"}
-
-        # --- 2. Continuously profile the child process ---
-        logging.info(f"Attempting to profile PID: {child_pid}...")
         
+        # --- 2. Start perf to profile the child process ---
+        # The filename now includes the number of threads
+        perf_output_file = output_dir / f"perf_data_threads_{num_threads}_pid_{child_pid}.data"
+        perf_command = [
+            'sudo', 'perf', 'record', '-g', '-o', str(perf_output_file), '-p', str(child_pid), '--call-graph', 'dwarf'
+        ]
+        logging.info(f"Starting perf command: {' '.join(perf_command)}")
+        perf_process = subprocess.Popen(perf_command)
+        
+        # --- 3. Continuously profile the child process ---
         child_proc = psutil.Process(child_pid)
         start_time = time.monotonic()
-        
-        # Get initial metrics (CPU from the child, but network is system-wide)
         cpu_before = child_proc.cpu_times()
         net_before = psutil.net_io_counters()
-        
+
         logging.info("Initial metrics retrieved. Starting continuous monitoring...")
         
         last_net = net_before
         last_cpu = cpu_before
 
-        # Poll the process status and metrics in a loop until it exits
         while child_proc.is_running():
             try:
-                # Update metrics on each loop to get the final values
                 last_net = psutil.net_io_counters()
                 last_cpu = child_proc.cpu_times()
             except psutil.NoSuchProcess:
-                # The process just exited, so the last captured metrics are the final ones
                 logging.warning("Process exited mid-loop. Using last captured metrics.")
                 break
-            time.sleep(0.1) # Prevents a busy-wait loop
+            time.sleep(0.05)
 
         bgsave_duration = time.monotonic() - start_time
         
-        logging.info(colorize(f"BGSAVE child process has exited. Time: {bgsave_duration:.2f}. Using final metrics...", LOG_COLORS.GREEN))
+        logging.info(colorize(f"BGSAVE child process has exited. Time: {bgsave_duration:.2f}.", LOG_COLORS.GREEN))
 
-        net_after = last_net
+        # --- 4. Stop perf and generate report ---
+        if perf_process.poll() is None:
+            logging.info("Terminating perf process...")
+            perf_process.terminate()
+            perf_process.wait(timeout=10)
+        
+        perf_report_file = output_dir / f"perf_report_threads_{num_threads}_pid_{child_pid}.txt"
+        perf_report_command = ['sudo', 'perf', 'report', '--header', '--no-demangle', '-i', str(perf_output_file), '-o', str(perf_report_file)]
+        logging.info(f"Generating perf report: {' '.join(perf_report_command)}")
+        subprocess.run(perf_report_command, check=True)
+        
         cpu_after = last_cpu
+        net_after = last_net
 
     except FileNotFoundError:
-        logging.error(f"Primary log file not found at {primary_log_file}.")
-        return {"status": "error", "error_message": "Log file not found"}
+        logging.error("A required file or command was not found. Ensure `perf` is installed.", exc_info=True)
+        return {"status": "error", "error_message": "Command not found"}
     except psutil.NoSuchProcess:
         logging.error(f"BGSAVE child process with PID {child_pid} was not found after detection.", exc_info=True)
         return {"status": "error", "error_message": "Process not found after detection"}
     except Exception as e:
-        logging.error(f"An error occurred while profiling the child process: {e}", exc_info=True)
+        logging.error(f"An error occurred during perf profiling: {e}", exc_info=True)
         return {"status": "error", "error_message": str(e)}
+    finally:
+        if perf_process and perf_process.poll() is None:
+            perf_process.kill()
 
     if bgsave_duration is None:
         logging.error("BGSAVE process duration could not be determined.")
@@ -128,7 +156,6 @@ def profile_primary_bgsave(
         "primary_cpu_time_seconds": cpu_time_seconds,
         "primary_net_write_mb_s": throughput_mb_s,
     }
-
 
 def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
     primary_process = None

@@ -15,10 +15,13 @@ REPO_BENCHMARK_DIR="valkey-rdb-benchmarking"
 # --- 1. Install Prerequisites ---
 echo "--- Installing essential packages ---"
 sudo apt-get update
-sudo apt-get install -y git python3-venv build-essential
+sudo apt-get install -y git python3-venv build-essential linux-perf
 sudo apt-get install -y cmake
 
-
+# --- 2. Configure perf for non-root users ---
+echo "--- Configuring perf for non-root access ---"
+# This allows non-root users to collect full stack traces
+sudo sh -c 'echo -1 > /proc/sys/kernel/perf_event_paranoid'
 # --- 2. Clone Repositories ---
 echo "--- Cloning repositories ---"
 if [ ! -d "$REPO_VALKEY_DIR" ]; then

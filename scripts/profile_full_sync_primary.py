@@ -76,6 +76,7 @@ def profile_primary_bgsave(
                 if match:
                     child_pid = int(match.group(1))
                     logging.info(colorize(f"Detected BGSAVE child process with PID: {child_pid}.", LOG_COLORS.GREEN))
+                    start_time = time.monotonic()
                     break
         
         if child_pid is None:
@@ -93,7 +94,6 @@ def profile_primary_bgsave(
         
         # --- 3. Continuously profile the child process ---
         child_proc = psutil.Process(child_pid)
-        start_time = time.monotonic()
         cpu_before = child_proc.cpu_times()
         net_before = psutil.net_io_counters()
 

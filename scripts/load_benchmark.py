@@ -5,6 +5,8 @@ from pathlib import Path
 
 # --- Local Utility Imports ---
 from utilities.parse_args import (
+    LOG_COLORS,
+    colorize,
     parse_benchmark_args,
     display_config,
     setup_logging,
@@ -84,7 +86,7 @@ def profile_rdb_load(config: BenchmarkConfig, output_dir: Path) -> dict | None:
             wait_for_server_to_start(config, timeout_seconds=600)
 
         load_duration = time.monotonic() - load_start_time
-        logging.info(f"Valkey server finished loading RDB in {load_duration:.4f} seconds.")
+        logging.info(colorize(f"Valkey server finished loading RDB in {load_duration:.4f} seconds.", LOG_COLORS.GREEN))
 
         # Manually collect psutil info after load is complete
         cpu_times = valkey_proc_psutil.cpu_times()
@@ -119,6 +121,8 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
     rdb_threads_to_profile = [1,2,3,4]
     final_results = []
     for rdb_threads in rdb_threads_to_profile:
+        logging.info(colorize(f"--- Starting RDB Load Benchmark with {rdb_threads} threads ---", LOG_COLORS.CYAN))
+
     # 2. Profile the server loading that RDB file
         config.rdb_threads = rdb_threads
         load_results = profile_rdb_load(config, output_dir)
@@ -158,7 +162,7 @@ def main():
     # Create a unique, timestamped directory for this run's output
     try:
         run_id = time.strftime("%Y%m%d_%H%M%S")
-        project_root = Path(__file__).resolve().parents[2]
+        project_root = Path(__file__).resolve().parents[1]
         dir_name = "load_benchmark_with_flamegraphs" if config.gen_flamegraph else "load_benchmark"
         output_dir = project_root / "results" / f"{dir_name}_{run_id}"
         output_dir.mkdir(parents=True, exist_ok=True)

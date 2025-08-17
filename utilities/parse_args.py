@@ -9,7 +9,7 @@ from dataclasses import dataclass, asdict
 from dotenv import load_dotenv
 
 # --- Default Values ---
-START_PORT_DEFAULT = 7000
+START_PORT_DEFAULT = 7001
 NUM_KEYS_MILLIONS_DEFAULT = 10.0
 VALUE_SIZE_BYTES_DEFAULT = 100
 RDB_THREADS_DEFAULT = 1

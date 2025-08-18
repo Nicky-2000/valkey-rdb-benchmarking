@@ -8,7 +8,6 @@ import psutil
 from typing import Dict, Any
 import re 
 
-
 # --- Local Utility Imports ---
 from utilities.parse_args import (
     parse_benchmark_args,
@@ -21,7 +20,6 @@ from utilities.parse_args import (
 from utilities.file_system_utilities import (
     save_results_to_csv,
     setup_directory_for_run,
-    delete_file,
 )
 from utilities.valkey_server_utilities import (
     start_standalone_valkey_server,
@@ -35,16 +33,6 @@ from utilities.valkey_commands import get_db_key_count
 PRIMARY_PORT_DEFAULT = 7000
 
 
-
-
-import logging
-from pathlib import Path
-import time
-import subprocess
-import psutil
-import re
-import os
-from typing import Dict, Any
 
 def profile_primary_bgsave(
     primary_process: subprocess.Popen,

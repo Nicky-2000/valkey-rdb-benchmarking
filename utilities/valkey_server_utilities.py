@@ -50,7 +50,7 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
         "--protected-mode", "no",
         "--repl-diskless-sync", "yes",
         "--repl-diskless-load", "swapdb",
-        "--dual-channel-replication-enabled ", "yes",
+        # "--dual-channel-replication-enabled ", "yes",
         
     ]
 
@@ -154,6 +154,6 @@ def stop_valkey_server(process: subprocess.Popen, client: valkey.Valkey | None):
             logging.error(f"Failed to forcefully kill process {process.pid}.", exc_info=True)
 
     # 3. Wait for the process to terminate and clean up
-    process.wait(timeout=5)
+    process.wait(timeout=20)
     logging.info(f"Valkey server on port {port} has been stopped.")
 

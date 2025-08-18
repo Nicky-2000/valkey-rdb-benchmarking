@@ -4,7 +4,7 @@ import time
 import os
 import sys
 import valkey
-from utilities.parse_args import BenchmarkConfig
+from utilities.parse_args import BenchmarkConfig, WorkloadType
 import logging
 
 
@@ -55,7 +55,7 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
     ]
 
     # Dynamically add the --loadmodule argument if a path is provided in the config
-    if config.valkey_json_module_path:
+    if config.valkey_json_module_path and config.workload_type != WorkloadType.STRING:
         if not Path(config.valkey_json_module_path).is_file():
             logging.error(f"Valkey JSON module not found at: {config.valkey_json_module_path}")
             return None

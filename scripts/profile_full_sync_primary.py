@@ -72,12 +72,13 @@ def profile_primary_bgsave(
         
         # --- 2. Start perf to profile the child process ---
         # The filename now includes the number of threads
-        perf_output_file = output_dir / f"perf_data_threads_{num_threads}_pid_{child_pid}.data"
-        perf_command = [
-            'sudo', 'perf', 'record', '-g', '-o', str(perf_output_file), '-p', str(child_pid), '--call-graph', 'dwarf'
-        ]
-        logging.info(f"Starting perf command: {' '.join(perf_command)}")
-        perf_process = subprocess.Popen(perf_command)
+        # perf_output_file = output_dir / f"perf_data_threads_{num_threads}_pid_{child_pid}.data"
+        # perf_command = [
+        #     'sudo', 'perf', 'record', '-g', '-o', str(perf_output_file), '-p', str(child_pid), '--call-graph', 'dwarf'
+        # ]
+        # logging.info(f"Starting perf command: {' '.join(perf_command)}")
+        # perf_process = subprocess.Popen(perf_command)
+        perf_process = None
         
         # --- 3. Continuously profile the child process ---
         child_proc = psutil.Process(child_pid)
@@ -104,18 +105,18 @@ def profile_primary_bgsave(
         logging.info(colorize(f"BGSAVE child process has exited. Time: {bgsave_duration:.2f}.", LOG_COLORS.GREEN))
 
         # --- 4. Stop perf and generate report ---
-        if perf_process.poll() is None:
-            logging.info("Terminating perf process...")
-            perf_process.terminate()
-            perf_process.wait(timeout=10)
+        # if perf_process.poll() is None:
+        #     logging.info("Terminating perf process...")
+        #     perf_process.terminate()
+        #     perf_process.wait(timeout=10)
         
         # Corrected perf report command to use output redirection
-        perf_report_file = output_dir / f"perf_report_threads_{num_threads}_pid_{child_pid}.txt"
-        perf_report_command = ['sudo', 'perf', 'report', '-i', str(perf_output_file)]
-        logging.info(f"Generating perf report to file: {perf_report_file}")
+        # perf_report_file = output_dir / f"perf_report_threads_{num_threads}_pid_{child_pid}.txt"
+        # perf_report_command = ['sudo', 'perf', 'report', '-i', str(perf_output_file)]
+        # logging.info(f"Generating perf report to file: {perf_report_file}")
         
-        with open(perf_report_file, 'w') as f:
-            subprocess.run(perf_report_command, stdout=f, check=True)
+        # with open(perf_report_file, 'w') as f:
+        #     subprocess.run(perf_report_command, stdout=f, check=True)
             
         
         cpu_after = last_cpu

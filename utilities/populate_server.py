@@ -14,7 +14,7 @@ from enum import Enum
 
 # --- Constants ---
 KEY_SIZE_BYTES = 16
-NUM_PROCESSES_FOR_DATA_POPULATION = 20
+NUM_PROCESSES_FOR_DATA_POPULATION = 40
 
 # --- Data Population with valkey-benchmark (Existing Function) ---
 def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:

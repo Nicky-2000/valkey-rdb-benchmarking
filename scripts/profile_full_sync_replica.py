@@ -29,7 +29,7 @@ from utilities.valkey_server_utilities import (
 from utilities.valkey_commands import get_db_key_count
 
 
-PRIMARY_IP = "10.128.0.8"
+PRIMARY_IP = "10.128.0.10"
 PRIMARY_PORT_DEFAULT = 7000
 REPLICA_PORT_DEFAULT = 7001
 
@@ -146,7 +146,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
                 "value_size_bytes": config.value_size_bytes,
                 "sync_duration_seconds": total_time,
                 "primary_ip": PRIMARY_IP,
-                "replica_ip": "10.128.0.9",
+                "replica_ip": "10.128.0.11",
                 "replica_port": REPLICA_PORT_DEFAULT,
                 "replica_cpu_time_seconds": replica_cpu_time,
                 "replica_net_read_mb_s": replica_throughput_mb_s,

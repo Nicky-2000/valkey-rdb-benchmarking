@@ -14,7 +14,7 @@ from utilities.parse_args import (
     setup_logging,
     BenchmarkConfig,
 )
-from utilities.file_system_utilities import save_results_to_csv, setup_directory_for_run
+from utilities.file_system_utilities import delete_file, save_results_to_csv, setup_directory_for_run
 from utilities.valkey_server_utilities import (
     start_standalone_valkey_server,
     stop_valkey_server,
@@ -81,24 +81,60 @@ def monitor_system_metrics(pid, metrics_list: list, stop_event, sample_interval=
         logging.warning(f"Could not monitor process {pid}. It may have terminated.")
     except Exception as e:
         logging.error(f"Error during system metrics monitoring: {e}")
+        
 
-def profile_rdb_load(config: BenchmarkConfig, output_dir: Path) -> dict | None:
+def _wait_for_rdb_load(config):
     """
-    Profiles the RDB load time of a new Valkey server instance by monitoring its log file and system metrics.
+    Helper function to wait for the RDB load completion log line.
+    Returns the load duration and a status flag.
     """
+    load_log_file = Path(config.temp_dir) / f"node_log_{config.start_port}_load.log"
+    load_duration = None
+    
+    file_wait_start_time = time.monotonic()
+    while not os.path.exists(load_log_file) and (time.monotonic() - file_wait_start_time < 30):
+        time.sleep(0.1)
+
+    if not os.path.exists(load_log_file):
+        logging.error(f"Log file {load_log_file} did not appear within timeout.")
+        return None, False
+
+    logging.info(f"Monitoring log file {load_log_file} for RDB load completion...")
+    log_start_time = time.monotonic()
+    
+    with open(load_log_file, "r", encoding="utf-8") as log_fd:
+        log_fd.seek(0, 2)
+        while load_duration is None and (time.monotonic() - log_start_time < 600):
+            line = log_fd.readline()
+            if not line:
+                time.sleep(0.1)
+                continue
+            
+            match = re.search(r'DB loaded from disk: ([\d.]+) seconds', line.strip())
+            if match:
+                load_duration = float(match.group(1))
+                logging.info(colorize(f"Detected RDB load completion from log: {load_duration:.3f} seconds.", LOG_COLORS.GREEN))
+                break
+    
+    if load_duration is None:
+        logging.error(f"RDB load completion log line not found in {load_log_file} within timeout.")
+        return None, False
+        
+    return load_duration, True
+
+def profile_rdb_load(config, output_dir: Path) -> dict | None:
     logging.info("--- Phase 2: Profiling RDB Load Operation ---")
     process = None
-    load_duration = None
     metrics_list = []
     stop_event = threading.Event()
     monitor_thread = None
+    client = None
 
     try:
         process = start_standalone_valkey_server(config, clear_data_dir=False, log_file_suffix="_load")
         if not process:
             return None
 
-        # Start the monitoring thread
         monitor_thread = threading.Thread(
             target=monitor_system_metrics,
             args=(process.pid, metrics_list, stop_event),
@@ -106,61 +142,56 @@ def profile_rdb_load(config: BenchmarkConfig, output_dir: Path) -> dict | None:
         )
         monitor_thread.start()
 
-        load_log_file = Path(config.temp_dir) / f"node_log_{config.start_port}_load.log"
-        logging.info(f"Waiting for RDB load log line to appear in {load_log_file}...")
+        flamegraph_generated = False
+        profiler_output_dir = output_dir / f"flamegraph_threads-{config.rdb_threads}"
 
-        # Wait for the log file to appear
-        file_wait_start_time = time.monotonic()
-        while not os.path.exists(load_log_file) and (time.monotonic() - file_wait_start_time < 30):
-            time.sleep(0.1)
-
-        if not os.path.exists(load_log_file):
-            logging.error(f"Log file {load_log_file} did not appear within timeout.")
-            return {"status": "error", "error_message": "Log file not created"}
-            
-        logging.info(f"Monitoring log file {load_log_file} for RDB load completion...")
-        log_start_time = time.monotonic()
+        if config.gen_flamegraph:
+            logging.info(colorize(f"Starting Flamegraph profiler for {config.rdb_threads} threads...", LOG_COLORS.CYAN))
+            with FlamegraphProfiler(pid=process.pid, output_dir=profiler_output_dir) as profiler:
+                load_duration, load_ok = _wait_for_rdb_load(config)
+        else:
+            load_duration, load_ok = _wait_for_rdb_load(config)
         
-        with open(load_log_file, "r", encoding="utf-8") as log_fd:
-            log_fd.seek(0, 2)
-            while load_duration is None and (time.monotonic() - log_start_time < 600):
-                line = log_fd.readline()
-                if not line:
-                    time.sleep(0.1)
-                    continue
-                
-                match = re.search(r'DB loaded from disk: ([\d.]+) seconds', line.strip())
-                if match:
-                    load_duration = float(match.group(1))
-                    logging.info(colorize(f"Detected RDB load completion from log: {load_duration:.3f} seconds.", LOG_COLORS.GREEN))
-                    break
-
-        if load_duration is None:
-            logging.error(f"RDB load completion log line not found in {load_log_file} within timeout.")
+        if not load_ok:
             return {"status": "error", "error_message": "RDB load log not found"}
 
         logging.info(colorize(f"Valkey server finished loading RDB in {load_duration:.4f} seconds.", LOG_COLORS.GREEN))
 
-        # Stop the monitoring thread
+        # NEW: Stop the monitoring thread and collect final metrics while the process is still running.
         stop_event.set()
         if monitor_thread and monitor_thread.is_alive():
             monitor_thread.join(timeout=5)
 
-        # Process the collected metrics
+        # FIX: Collect final metrics BEFORE the process is stopped.
+        valkey_proc_psutil = psutil.Process(process.pid)
+        cpu_times = valkey_proc_psutil.cpu_times()
+        memory_info = valkey_proc_psutil.memory_info()
+
+        # FIX: Manually connect and shut down the server.
+        client = wait_for_server_to_start(config)
+        num_keys_loaded = get_db_key_count(client)
+        logging.info(colorize(f"Num Keys Loaded: {num_keys_loaded}", LOG_COLORS.YELLOW))
+        if client:
+            logging.info(f"RDB load complete. Shutting down Valkey process {process.pid}...")
+            stop_valkey_server(process, client)
+        else:
+            logging.error("Could not connect to server after RDB load to shut it down.")
+            
+        # FIX: The profiler.generate() call is now safe since the perf process is stopped by the `with` block
+        # and we've waited for everything to finalize.
+        if config.gen_flamegraph:
+            if 'profiler' in locals() and profiler:
+                profiler.generate()
+                flamegraph_generated = True
+
         avg_cpu_percent = statistics.mean([m['cpu_percent'] for m in metrics_list]) if metrics_list else 0
         avg_memory_rss_bytes = statistics.mean([m['memory_rss_bytes'] for m in metrics_list]) if metrics_list else 0
         
-        # Calculate total I/O from the first and last sample
         first_io = metrics_list[0] if metrics_list else {'read_bytes': 0, 'write_bytes': 0}
         last_io = metrics_list[-1] if metrics_list else {'read_bytes': 0, 'write_bytes': 0}
         total_read_bytes = last_io['read_bytes'] - first_io['read_bytes']
         total_write_bytes = last_io['write_bytes'] - first_io['write_bytes']
         
-        # Manually collect psutil info after load is complete for final state
-        valkey_proc_psutil = psutil.Process(process.pid)
-        cpu_times = valkey_proc_psutil.cpu_times()
-        memory_info = valkey_proc_psutil.memory_info()
-
         return {
             "load_duration_seconds": load_duration,
             "avg_cpu_percent": avg_cpu_percent,
@@ -170,7 +201,8 @@ def profile_rdb_load(config: BenchmarkConfig, output_dir: Path) -> dict | None:
             "cpu_user_time_seconds": cpu_times.user,
             "cpu_system_time_seconds": cpu_times.system,
             "memory_rss_bytes_final": memory_info.rss,
-            "status": "ok"
+            "status": "ok",
+            "flamegraph_generated": flamegraph_generated
         }
 
     except Exception as e:
@@ -180,8 +212,9 @@ def profile_rdb_load(config: BenchmarkConfig, output_dir: Path) -> dict | None:
         stop_event.set()
         if monitor_thread and monitor_thread.is_alive():
             monitor_thread.join(timeout=5)
-        if process:
-            stop_valkey_server(process, None)
+        if process and process.poll() is None:
+            stop_valkey_server(process, client)
+            
 
 def load_benchmark(config: BenchmarkConfig, output_dir: Path):
     """
@@ -192,7 +225,12 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
     if not prepare_rdb_file(config):
         return None
     
-    rdb_threads_to_profile = [1,2,3,4,6,8,10,15]
+    # 3. Aggregate final metrics for reporting
+    data_dir = Path(config.temp_dir) / f"node_data_{config.start_port}"
+    rdb_file_path = data_dir / "dump.rdb"
+    rdb_file_size_bytes = rdb_file_path.stat().st_size if rdb_file_path.exists() else 0
+    rdb_threads_to_profile = [1,2,3,4,6, 8, 10, 15, 20, 25, 30, 40, 50]
+    
     final_results = []
     for rdb_threads in rdb_threads_to_profile:
         logging.info(colorize(f"--- Starting RDB Load Benchmark with {rdb_threads} threads ---", LOG_COLORS.CYAN))
@@ -206,12 +244,7 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
             logging.error("Failed to profile the RDB load.")
             return None
 
-        # 3. Aggregate final metrics for reporting
-        data_dir = Path(config.temp_dir) / f"node_data_{config.start_port}"
-        rdb_file_path = data_dir / "dump.rdb"
-        rdb_file_size_bytes = rdb_file_path.stat().st_size if rdb_file_path.exists() else 0
         load_duration = load_results.get("load_duration_seconds", 0)
-
         actual_throughput = 0
         if load_duration > 0:
             actual_throughput = (rdb_file_size_bytes / load_duration) * (10**-6) # MB/s
@@ -227,6 +260,7 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
             **load_results,
         }
         final_results.append(result)
+    delete_file(rdb_file_path)
     return final_results # Return as a list for consistency with save_results_to_csv
 
 

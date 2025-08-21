@@ -199,7 +199,7 @@ def parse_benchmark_args() -> BenchmarkConfig:
     
     parser.add_argument(
         "--gen-flamegraph", 
-        action=argparse.BooleanOptionalAction, 
+        type=bool, 
         default=False,
         help="Generate a flame graph for each test iteration.",
     )

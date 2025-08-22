@@ -75,7 +75,12 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
     
     try:
         primary_client = valkey.Valkey(host=PRIMARY_IP, port=PRIMARY_PORT_DEFAULT)
-        num_keys_expected = get_db_key_count(primary_client)
+        while True: 
+            num_keys_expected = get_db_key_count(primary_client)
+            if num_keys_expected == 1_000_000_000:
+                break
+            logging.info(f"Num keys on primary {num_keys_expected}")
+            time.sleep(20)
         logging.info(f"Primary has {num_keys_expected} keys")
     except Exception as e:
         logging.error(f"Could not connect to primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}. Is it running and populated?", exc_info=True)

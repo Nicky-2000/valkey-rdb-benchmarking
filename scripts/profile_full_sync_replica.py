@@ -75,6 +75,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
     
     try:
         primary_client = valkey.Valkey(host=PRIMARY_IP, port=PRIMARY_PORT_DEFAULT)
+        logging.info("Got client!")
         while True: 
             num_keys_expected = get_db_key_count(primary_client)
             if num_keys_expected == 1_000_000_000:

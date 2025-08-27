@@ -3,8 +3,8 @@ import subprocess
 import time
 import psutil
 import valkey
-from utilities.parse_args import LOG_COLORS, BenchmarkConfig, colorize
-from utilities.key_value_generation_utilities import make_deterministic_val 
+from utilities.parse_args import LOG_COLORS, colorize
+from valkey.commands.json.path import Path
 
 def get_db_key_count(client: valkey.Valkey) -> int:
     """
@@ -27,8 +27,7 @@ def get_db_key_count(client: valkey.Valkey) -> int:
 def trigger_blocking_save(client: valkey.Valkey) -> dict:
     """
     Triggers a blocking SAVE on a Valkey client and measures its duration.
-
-    This is a lightweight function that does not perform detailed system profiling.
+    This function that does not perform detailed system profiling.
 
     Args:
         client: An active valkey.Valkey client instance.
@@ -41,12 +40,12 @@ def trigger_blocking_save(client: valkey.Valkey) -> dict:
 
     try:
         start_time = time.monotonic()
-        client.save()  # This call blocks until the save is complete
+        client.save()  # Blocks until save is completed
         duration = time.monotonic() - start_time
 
         logging.info(f"Blocking SAVE on port {node_port} completed in {duration:.4f} seconds.")
 
-        # Optionally, verify with the server's INFO command
+        # Check the save proces with the server's INFO command
         info = client.info("persistence")
         last_save_status = info.get("rdb_last_save_status", "unknown")
         
@@ -96,7 +95,6 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         valkey_proc = psutil.Process(server_process.pid)
         
         # --- Capture metrics before SAVE ---
-        # Capture system-wide CPU times
         system_cpu_before = psutil.cpu_times()
         io_before = valkey_proc.io_counters()
         mem_before = valkey_proc.memory_info()
@@ -108,7 +106,6 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         save_duration = time.monotonic() - save_start_time
 
         # --- Capture metrics after SAVE ---
-        # Capture system-wide CPU times
         system_cpu_after = psutil.cpu_times()
         io_after = valkey_proc.io_counters()
         mem_after = valkey_proc.memory_info()
@@ -136,8 +133,8 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
             "memory_rss_bytes": mem_after.rss,
             "context_switches_voluntary": ctx_after.voluntary - ctx_before.voluntary,
             "context_switches_involuntary": ctx_after.involuntary - ctx_before.involuntary,
-            "iowait_time_seconds": iowait_time, # NEW METRIC
-            "iowait_percentage": (iowait_time / save_duration) * 100 # NEW METRIC
+            "iowait_time_seconds": iowait_time,
+            "iowait_percentage": (iowait_time / save_duration) * 100
         }
     except psutil.NoSuchProcess:
         logging.error(f"Process with PID {server_process.pid} not found for profiling.", exc_info=True)
@@ -147,11 +144,10 @@ def profile_blocking_save(client: valkey.Valkey, server_process: subprocess.Pope
         return {"port": node_port, "status": "error", "error_message": str(e)}
 
 
-from typing import List, Tuple, Any
-from valkey.commands.json.path import Path
+
 
 def verify_data(
-    client: valkey.Valkey, kv_to_verify: List[Tuple[str, Any]]
+    client: valkey.Valkey, kv_to_verify: list[tuple[str, any]]
 ) -> bool:
     """
     Verifies the existence and correctness of keys in a Valkey instance.
@@ -167,14 +163,14 @@ def verify_data(
     Returns:
         True if all key-value pairs are verified successfully, False otherwise.
     """
-    logging.info("--- Starting Data Verification ---")
+    logging.info(colorize("--- Starting Data Verification ---", LOG_COLORS.CYAN))
     if not kv_to_verify:
         logging.warning("Verification list is empty. Nothing to do.")
         return True
 
     total_keys = len(kv_to_verify)
     errors_found = 0
-    batch_size = 5000  # Number of key-value pairs to fetch in each batch
+    batch_size = 5000  # Num of key-value pairs to fetch in each batch
     
     logging.info(f"Preparing to verify {total_keys:,} key-value pairs with a batch size of {batch_size:,}.")
     
@@ -223,8 +219,8 @@ def verify_data(
     logging.info(f"Verification finished in {elapsed_time:.2f} seconds.")
     
     if errors_found == 0:
-        logging.info(f"✅ Success! All {total_keys:,} key-value pairs were verified correctly.")
+        logging.info(colorize(f"Success! All {total_keys:,} key-value pairs were verified correctly.", LOG_COLORS.GREEN))
         return True
     else:
-        logging.error(f"❌ Verification Failed. Found {errors_found:,} errors out of {total_keys:,} keys.")
+        logging.error(colorize(f"❌ Verification Failed. Found {errors_found:,} errors out of {total_keys:,} keys.", LOG_COLORS.RED))
         return False

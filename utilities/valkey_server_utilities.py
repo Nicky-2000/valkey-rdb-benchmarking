@@ -10,7 +10,8 @@ import logging
 
 def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool = True, log_file_suffix: str = "") -> subprocess.Popen | None:
     """
-    Starts a standalone Valkey Server Instance
+    Starts a standalone Valkey Server Instance.
+    Note: Lots of the instance config is hard coded here. We can extend this later.
     """
     logging.info("Starting Valkey Standalone Server")
     
@@ -54,7 +55,7 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
         
     ]
 
-    # Dynamically add the --loadmodule argument if a path is provided in the config
+    # Dynamically add the --loadmodule argument if a path to JSON module is provided in the config
     if config.valkey_json_module_path and config.workload_type != WorkloadType.STRING:
         if not Path(config.valkey_json_module_path).is_file():
             logging.error(f"Valkey JSON module not found at: {config.valkey_json_module_path}")
@@ -114,10 +115,10 @@ def wait_for_server_to_start(config: BenchmarkConfig, timeout_seconds: int = 30,
 
 def stop_valkey_server(process: subprocess.Popen, client: valkey.Valkey | None):
     """
-    Stops a Valkey server instance gracefully, with a forceful kill as a fallback.
+    Stops a Valkey server instance gracefully. Uses a forceful kill as a fallback.
     The client object can be None if the server failed to start but the process exists.
     """
-    # Derive port from client if available, for logging purposes.
+    # Get port for logging
     port = "N/A"
     if client:
         # Safely get the port from the client's connection pool
@@ -133,9 +134,8 @@ def stop_valkey_server(process: subprocess.Popen, client: valkey.Valkey | None):
     # 1. Try to shut down gracefully using the client
     if client:
         try:
-            # SHUTDOWN is the preferred, clean way to stop the server
             client.shutdown(save=False)
-            time.sleep(1)  # Give the server a moment to shut down
+            time.sleep(1)
         except valkey.exceptions.ConnectionError:
             # This is expected if the server shuts down before the command returns
             logging.info(f"Server on port {port} disconnected as expected during graceful shutdown.")
@@ -146,7 +146,6 @@ def stop_valkey_server(process: subprocess.Popen, client: valkey.Valkey | None):
     if process.poll() is None:
         logging.warning(f"Server process {process.pid} is still running. Killing forcefully (SIGKILL)...")
         try:
-            # os.killpg is more reliable for stopping the process and any children
             os.killpg(os.getpgid(process.pid), 9)
         except ProcessLookupError:
             logging.warning(f"Process {process.pid} not found for force kill. It likely terminated.")
@@ -156,4 +155,3 @@ def stop_valkey_server(process: subprocess.Popen, client: valkey.Valkey | None):
     # 3. Wait for the process to terminate and clean up
     process.wait(timeout=20)
     logging.info(f"Valkey server on port {port} has been stopped.")
-

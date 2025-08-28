@@ -220,6 +220,7 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
     """
     Main orchestration function for the RDB load benchmark.
     """
+    
     # 1. Create the RDB file to be tested
     config.rdb_threads = 10 # Save data with 10 threads for speed
     if not prepare_rdb_file(config):
@@ -284,21 +285,30 @@ def main():
         return
 
     logging.info("--- Starting RDB Load Benchmark ---")
-    results = load_benchmark(config, output_dir=output_dir)
-
-    if results:
-        logging.info("Benchmark finished. Collected results.")
-        csv_file_name = (
-            f"load_summary_{config.num_keys_millions}keys_{config.value_size_bytes}B"
-            f"_comp-{config.rdb_compression}_csum-{config.rdb_checksum}.csv"
-        )
-        save_results_to_csv(
-            results=results,
-            output_dir=str(output_dir),
-            file_name=csv_file_name,
-        )
+    
+    compression_options = []
+    if config.rdb_compression == "both":
+        compression_options = ["yes", "no"]
     else:
-        logging.error("Benchmark failed to produce any results.")
+        compression_options.append(config.rdb_compression)
+    
+    for compression_option in compression_options: 
+        config.rdb_compression = compression_option
+        results = load_benchmark(config, output_dir=output_dir)
+
+        if results:
+            logging.info("Benchmark finished. Collected results.")
+            csv_file_name = (
+                f"load_summary_{config.num_keys_millions}keys_{config.value_size_bytes}B"
+                f"_comp-{config.rdb_compression}_csum-{config.rdb_checksum}.csv"
+            )
+            save_results_to_csv(
+                results=results,
+                output_dir=str(output_dir),
+                file_name=csv_file_name,
+            )
+        else:
+            logging.error("Benchmark failed to produce any results.")
 
 
 if __name__ == "__main__":

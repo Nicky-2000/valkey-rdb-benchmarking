@@ -47,7 +47,8 @@ def save_benchmark(config: BenchmarkConfig, output_dir: Path):
         else:
             compression_options.append(config.rdb_compression)
 
-        config.rdb_compression = "yes"  # Set this so we can start the server
+        # Set this so we can start the server. It will be updated later before the save
+        config.rdb_compression = "yes"  
 
         process = start_standalone_valkey_server(config)
         if not process:

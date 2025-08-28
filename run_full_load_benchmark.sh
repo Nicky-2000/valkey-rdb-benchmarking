@@ -18,16 +18,13 @@ echo "Starting Load Benchmarks. All output to $LOG_FILE" | tee -a "$LOG_FILE"
 echo "----------------------------------------------------" | tee -a "$LOG_FILE"
 
 declare -a benchmarks=(
-    "50 50 both"
-    "50 300 both"
-    "50 500 both"
-    "20 5000 both"
-    "5 20000 both"
-    "1 64000 both" # Slightly smaller than lower watermark
-    "1 66000 both" # Slightly larger than lower watermark
-    "1 100000 both"
-    "0.5 262000 both" # Slightly smaller than upper watermark
-    "0.5 272000 both" # Slightly larger than upper watermark
+    # "50 50 both"
+    # "50 300 both"
+    # "50 500 both"
+    "3 5000 both"
+    "3 20000 both"
+    "0.5 100000 both"
+    "0.1 500000 both"
     "0.1 1000000 both" # 1MB
 )
 

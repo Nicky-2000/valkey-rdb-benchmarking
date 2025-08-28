@@ -104,7 +104,7 @@ def _wait_for_rdb_load(config):
     
     with open(load_log_file, "r", encoding="utf-8") as log_fd:
         log_fd.seek(0, 2)
-        while load_duration is None and (time.monotonic() - log_start_time < 600):
+        while load_duration is None and (time.monotonic() - log_start_time < 3600): # Wait for 1 hour
             line = log_fd.readline()
             if not line:
                 time.sleep(0.1)

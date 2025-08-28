@@ -10,17 +10,16 @@ import subprocess
 import time
 import os
 import sys
-from enum import Enum
 
 # --- Constants ---
 KEY_SIZE_BYTES = 16
-NUM_PROCESSES_FOR_DATA_POPULATION = 40
+NUM_PROCESSES_FOR_DATA_POPULATION = 25
 
-# --- Data Population with valkey-benchmark (Existing Function) ---
+# --- Data Population with valkey-benchmark ---
 def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
     """
-    Populates a standalone Valkey instance using the valkey-benchmark command,
-    printing every 100th line of output to the console.
+    Populates a standalone Valkey instance using the valkey-benchmark command.
+    Prints every 100th line of output to the console.
 
     Args:
         config: The BenchmarkConfig object containing run parameters.
@@ -56,11 +55,10 @@ def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
     start_time = time.monotonic()
 
     try:
-        # Use subprocess.Popen to stream output
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Redirect stderr to stdout to consolidate output
+            stderr=subprocess.STDOUT,
             text=True,
             universal_newlines=True
         )
@@ -97,14 +95,14 @@ def populate_data_with_benchmark(config: BenchmarkConfig) -> bool:
         logging.error(f"An unexpected error occurred during valkey-benchmark execution: {e}", exc_info=True)
         return False
 
-# --- Worker for String Data (Corrected to return kv tuples) ---
+# --- Worker function for String Data ---
 def _populate_string_worker(connection_info: tuple[str, int], value_size: int, num_keys_for_worker: int, return_keys: bool):
     """
     A worker process that connects to Valkey, generates its own keys and values, and populates them.
     Returns the count of keys and optionally a list of (key, value) tuples.
     """
     host, port = connection_info
-    batch_size = 1 if value_size > 10_000 else 50_000
+    batch_size = 1 if value_size > 10_000 else 50_000 # Use a smaller batch size for larger values.
     kv_list = [] if return_keys else None
     
     try:
@@ -117,7 +115,7 @@ def _populate_string_worker(connection_info: tuple[str, int], value_size: int, n
             value = make_deterministic_val(key, value_size)
             pipe.set(key, value)
             
-            if return_keys:
+            if return_keys: # Only add the keys to the list if we need to return them.
                 kv_list.append((key, value))
                 
             if (i + 1) % batch_size == 0:
@@ -134,7 +132,7 @@ def _populate_string_worker(connection_info: tuple[str, int], value_size: int, n
             client.connection_pool.disconnect()
  
 
-# --- Worker for JSON Data (Corrected) ---
+# --- Worker for JSON Data ---
 def _populate_json_worker(connection_info: tuple[str, int], workload_type: WorkloadType, num_keys_for_worker: int, start_index: int, return_keys: bool):
     """
     A worker process that generates its own JSON keys and populates them.
@@ -171,8 +169,7 @@ def _populate_json_worker(connection_info: tuple[str, int], workload_type: Workl
             data = generate_func()
             pipe.json().set(key, Path.root_path(), data)
             
-            if return_keys:
-                # Append the tuple of key and the generated JSON data
+            if return_keys: # Only append the keys if we need to return them.
                 kv_list.append((key, data))
 
             keys_inserted_count += 1
@@ -187,7 +184,8 @@ def _populate_json_worker(connection_info: tuple[str, int], workload_type: Workl
         return 0, None
     finally:
         if 'client' in locals() and client:
-            client.connection_pool.disconnect()      
+            client.connection_pool.disconnect()
+ 
 def populate_data_standalone(config: BenchmarkConfig, return_keys: bool = False):
     """
     Populates a Valkey instance using multiple processes, with each worker

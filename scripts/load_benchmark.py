@@ -229,7 +229,8 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
     data_dir = Path(config.temp_dir) / f"node_data_{config.start_port}"
     rdb_file_path = data_dir / "dump.rdb"
     rdb_file_size_bytes = rdb_file_path.stat().st_size if rdb_file_path.exists() else 0
-    rdb_threads_to_profile = [1,2,3,4,6, 8, 10, 15]
+    rdb_threads_to_profile = [1, 2, 3, 4, 6, 8, 10, 15]
+
     
     final_results = []
     for rdb_threads in rdb_threads_to_profile:

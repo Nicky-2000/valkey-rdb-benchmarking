@@ -28,7 +28,7 @@ echo "--- Cloning repositories ---"
 if [ ! -d "$REPO_VALKEY_DIR" ]; then
     git clone "$REPO_VALKEY_URL"
     cd "$REPO_VALKEY_DIR"
-    git checkout multi-threaded-RDB-Load
+    git checkout RDB-Load-multi-threaded
     cd ..
 else
     echo "Valkey repository already exists. Skipping clone."

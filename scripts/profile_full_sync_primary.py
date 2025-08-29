@@ -154,8 +154,8 @@ def run_primary_benchmark(config: BenchmarkConfig, output_dir: Path):
     primary_process = None
     primary_client = None
     all_results = []
-    thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10, 12, 15]
-
+    thread_counts_to_test = [1, 2, 3, 4, 6, 8, 10, 15]
+    
     try:
         # --- 1. Initial Setup and Server Start (Primary) - **Run once** ---
         primary_temp_dir = Path(config.temp_dir) / f"primary_data_{PRIMARY_PORT_DEFAULT}"

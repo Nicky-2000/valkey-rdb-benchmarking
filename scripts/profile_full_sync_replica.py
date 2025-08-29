@@ -79,7 +79,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
         while True: 
             num_keys_expected = get_db_key_count(primary_client)
             logging.info(f"Num keys on primary {num_keys_expected}")
-            if num_keys_expected == 1_000_000_000:
+            if num_keys_expected == int(config.num_keys_millions * 10e6):
                 break
             time.sleep(20)
         logging.info(f"Primary has {num_keys_expected} keys")

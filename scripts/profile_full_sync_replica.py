@@ -81,7 +81,7 @@ def full_sync_replica_benchmark(config: BenchmarkConfig, output_dir: Path):
             logging.info(f"Num keys on primary {num_keys_expected}")
             if num_keys_expected == int(config.num_keys_millions * 1e6):
                 break
-            time.sleep(20)
+            time.sleep(1)
         logging.info(f"Primary has {num_keys_expected} keys")
     except Exception as e:
         logging.error(f"Could not connect to primary at {PRIMARY_IP}:{PRIMARY_PORT_DEFAULT}. Is it running and populated?", exc_info=True)

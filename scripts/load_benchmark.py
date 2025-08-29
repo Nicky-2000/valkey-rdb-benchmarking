@@ -240,7 +240,7 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
     # 2. Profile the server loading that RDB file
         config.rdb_threads = rdb_threads
         logging.info(colorize(f"---- Profiling RDB Load with {rdb_threads} rdb_threads", LOG_COLORS.GREEN))
-        
+        os.system("sync; sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'")
         load_results = profile_rdb_load(config, output_dir)
         if not load_results or load_results.get("status") != "ok":
             logging.error("Failed to profile the RDB load.")

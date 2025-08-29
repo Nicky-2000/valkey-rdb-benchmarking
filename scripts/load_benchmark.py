@@ -252,7 +252,7 @@ def load_benchmark(config: BenchmarkConfig, output_dir: Path):
             actual_throughput = (rdb_file_size_bytes / load_duration) * (10**-6) # MB/s
 
         result = {
-            "threads": rdb_threads,
+            "num_threads": rdb_threads,
             "keys": config.num_keys_millions,
             "value_size": config.value_size_bytes,
             "rdbcompression": config.rdb_compression,

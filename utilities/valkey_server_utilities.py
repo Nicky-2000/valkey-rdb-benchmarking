@@ -50,7 +50,8 @@ def start_standalone_valkey_server(config: BenchmarkConfig, clear_data_dir: bool
         "--bind", "0.0.0.0",
         "--protected-mode", "no",
         "--repl-diskless-sync", "yes",
-        "--repl-diskless-load", "on-empty-db",
+        "--repl-diskless-load", "flush-before-load",
+        "--repl-diskless-sync-delay", "0"
         # "--dual-channel-replication-enabled ", "yes",
         
     ]
